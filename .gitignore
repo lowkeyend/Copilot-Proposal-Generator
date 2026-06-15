@@ -1,0 +1,24 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+backend/.env
+
+# Node / Next
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
+# Runtime artifacts (keep the folders via .gitkeep)
+generated/*.docx
+storage/proposals/*.json
+storage/templates.json
+storage/pattern_registry.json
+
+# Qdrant data (user-supplied, large)
+qdrant_local_db/*
+!qdrant_local_db/README.md
+
+# OS
+.DS_Store
+Thumbs.db

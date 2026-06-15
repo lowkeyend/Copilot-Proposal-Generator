@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 40% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --primary: 211 52% 25%;
+  --primary-foreground: 0 0% 100%;
+  --muted: 210 40% 94%;
+  --muted-foreground: 215 16% 47%;
+  --accent: 199 51% 37%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 32% 88%;
+  --input: 214 32% 88%;
+  --ring: 199 51% 37%;
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: 222 47% 8%;
+  --foreground: 210 40% 96%;
+  --card: 222 40% 12%;
+  --card-foreground: 210 40% 96%;
+  --primary: 199 70% 55%;
+  --primary-foreground: 222 47% 11%;
+  --muted: 217 33% 18%;
+  --muted-foreground: 215 20% 65%;
+  --accent: 199 60% 45%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 63% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 217 33% 22%;
+  --input: 217 33% 22%;
+  --ring: 199 70% 55%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+/* Thin scrollbars for panels */
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 8px;
+}
+
+/* Rendered markdown preview inside section cards */
+.prose-proposal h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0.75rem 0 0.35rem;
+  color: hsl(var(--primary));
+}
+.prose-proposal h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0.6rem 0 0.3rem;
+}
+.prose-proposal p {
+  margin: 0.4rem 0;
+  line-height: 1.6;
+}
+.prose-proposal ul {
+  margin: 0.4rem 0;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+.prose-proposal li {
+  margin: 0.15rem 0;
+}
+.prose-proposal table {
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  width: 100%;
+  font-size: 0.85rem;
+}
+.prose-proposal th,
+.prose-proposal td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+.prose-proposal th {
+  background: hsl(var(--muted));
+}
