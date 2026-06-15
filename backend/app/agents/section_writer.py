@@ -1,4 +1,4 @@
-"""Agent 7 — Section Writer Agent.
+"""Agent 7 - Section Writer Agent.
 
 Generates the proposal ONE section at a time (never the whole document at
 once). Each call receives the client context, the section name, retrieved
@@ -19,10 +19,13 @@ from app.services.llm_service import LLMError, get_llm
 
 _SYSTEM = (
     "You are a senior bid writer producing polished, client-ready proposal "
-    "sections for enterprise technology engagements. Write in clean Markdown "
-    "(headings, short paragraphs, bullets, and pipe tables where useful). "
-    "Be specific and grounded in the supplied evidence; never invent client "
-    "facts. Do not add a top-level document title — only this section."
+    "sections for enterprise technology engagements. Write in concise, "
+    "formal proposal prose with a consulting-bid tone. Use clean Markdown "
+    "(short paragraphs, bullets, and pipe tables where useful), but avoid "
+    "generic filler, self-referential language, and phrases like 'here's' or "
+    "'this proposal outlines'. Ground every claim in the supplied evidence; "
+    "never invent client facts. Do not add a top-level document title - only "
+    "this section."
 )
 
 _TEMPLATE = """Write the proposal section titled: "{section_title}".
@@ -46,9 +49,15 @@ ORIGINAL REQUEST
 EVIDENCE FROM PRIOR PROPOSALS (reuse and adapt; cite nothing inline):
 {evidence}
 
-Write the section now. Start with a short "## {section_title}" is NOT needed;
-the heading is added by the system. Begin directly with the body. Aim for
-{length} of well-structured content.
+Write the section now. The heading is added by the system, so begin directly
+with the body. Match a formal proposal style:
+- open with a crisp, substantive lead paragraph;
+- use section-specific subheadings only when they add clarity;
+- include at least one practical detail, phase, deliverable, or risk
+  implication where relevant;
+- avoid generic marketing language and vague claims.
+
+Aim for {length} of well-structured content.
 """
 
 
@@ -64,7 +73,7 @@ def _format_evidence(chunks: list[EvidenceChunk]) -> str:
         sec = f" / {c.source_section}" if c.source_section else ""
         snippet = (c.text or "").strip().replace("\n", " ")
         if len(snippet) > 700:
-            snippet = snippet[:700] + "…"
+            snippet = snippet[:700] + "..."
         lines.append(f"[{i}] ({src}{sec})\n{snippet}")
     return "\n\n".join(lines)
 
@@ -80,13 +89,13 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     )
 
     instruction_block = ""
-    length = "400–650 words"
+    length = "400-650 words"
     if req.instruction:
         instruction_block = f"REVISION INSTRUCTION (follow precisely):\n{req.instruction}"
         if any(w in req.instruction.lower() for w in ("short", "concise", "brief")):
-            length = "180–300 words"
+            length = "180-300 words"
         elif any(w in req.instruction.lower() for w in ("longer", "expand", "detail")):
-            length = "650–900 words"
+            length = "650-900 words"
 
     llm = get_llm()
     try:
@@ -103,7 +112,8 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
                         family=req.proposal_family or "—",
                         tone=req.context.tone or "Formal",
                         special=req.context.special_instructions or "none",
-                        guidance=req.pattern_guidance or "Follow the family's standard structure.",
+                        guidance=req.pattern_guidance
+                        or "Follow the family's standard structure.",
                         prompt=req.prompt or "—",
                         instruction_block=instruction_block,
                         evidence=_format_evidence(evidence),
@@ -112,7 +122,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
                 },
             ],
             model=req.model,
-            temperature=0.45,
+            temperature=0.35,
         )
     except LLMError as exc:
         content = (

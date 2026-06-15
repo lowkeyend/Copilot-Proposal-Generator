@@ -22,3 +22,10 @@ qdrant_local_db/*
 # OS
 .DS_Store
 Thumbs.db
+
+# Local automation / deployment logs
+backend/*.log
+backend/*.err
+frontend/*.log
+frontend/*.err
+railway-login.*

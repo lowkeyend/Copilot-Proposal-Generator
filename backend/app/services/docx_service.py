@@ -20,7 +20,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt, RGBColor
+from docx.shared import Inches, Pt, RGBColor
 
 from app.config import get_settings
 from app.models.schemas import ClientContext, SectionResult
@@ -70,7 +70,7 @@ class DocxComposer:
         self._configure_styles(doc)
         self._add_header_footer(doc, title)
         self._add_title_page(doc, title, context)
-        self._add_toc(doc)
+        self._add_toc(doc, sections)
         self._add_sections(doc, sections)
 
         self.settings.generated_path.mkdir(parents=True, exist_ok=True)
@@ -83,9 +83,14 @@ class DocxComposer:
 
     # ------------------------------------------------------------------
     def _configure_styles(self, doc: Document) -> None:
+        for section in doc.sections:
+            section.top_margin = Inches(0.75)
+            section.bottom_margin = Inches(0.7)
+            section.left_margin = Inches(0.8)
+            section.right_margin = Inches(0.8)
         normal = doc.styles["Normal"]
-        normal.font.name = "Calibri"
-        normal.font.size = Pt(11)
+        normal.font.name = "Aptos"
+        normal.font.size = Pt(10.5)
         for level, size in ((1, 16), (2, 13), (3, 11.5)):
             try:
                 h = doc.styles[f"Heading {level}"]
@@ -115,13 +120,20 @@ class DocxComposer:
     def _add_title_page(
         self, doc: Document, title: str, context: ClientContext
     ) -> None:
-        for _ in range(4):
+        lead = doc.add_paragraph()
+        lead.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        lead_run = lead.add_run("PROPOSAL")
+        lead_run.bold = True
+        lead_run.font.size = Pt(11)
+        lead_run.font.color.rgb = ACCENT
+
+        for _ in range(2):
             doc.add_paragraph()
         t = doc.add_paragraph()
         t.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = t.add_run(title)
         run.bold = True
-        run.font.size = Pt(30)
+        run.font.size = Pt(28)
         run.font.color.rgb = BRAND
 
         if context.client_name:
@@ -131,33 +143,68 @@ class DocxComposer:
             r.font.size = Pt(15)
             r.font.color.rgb = ACCENT
 
+        strap = doc.add_paragraph()
+        strap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        strap_run = strap.add_run(
+            "Strategic delivery plan, implementation approach, and commercial alignment"
+        )
+        strap_run.font.size = Pt(10.5)
+        strap_run.italic = True
+        strap_run.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
+
+        doc.add_paragraph()
+        summary = doc.add_table(rows=0, cols=2)
+        summary.style = "Light Grid Accent 1"
+        summary.autofit = True
         meta_lines = [
             ("Industry", context.industry),
             ("Engagement", context.project_type),
             ("Date", datetime.now().strftime("%d %B %Y")),
         ]
-        for _ in range(3):
-            doc.add_paragraph()
         for label, value in meta_lines:
             if not value:
                 continue
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p.add_run(f"{label}: ").bold = True
-            p.add_run(value)
+            row = summary.add_row().cells
+            _set_cell_text(row[0], label, bold=True)
+            _set_cell_text(row[1], value)
+        doc.add_paragraph()
+        note = doc.add_paragraph()
+        note.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        note_run = note.add_run("Confidential draft prepared for review")
+        note_run.font.size = Pt(9)
+        note_run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
         doc.add_page_break()
 
-    def _add_toc(self, doc: Document) -> None:
+    def _add_toc(self, doc: Document, sections: list[SectionResult]) -> None:
         heading = doc.add_paragraph("Table of Contents")
         heading.style = doc.styles["Heading 1"]
+        intro = doc.add_paragraph(
+            "This contents page is rendered explicitly so the outline is visible "
+            "even before Word refreshes fields."
+        )
+        intro.paragraph_format.space_after = Pt(6)
+        table = doc.add_table(rows=1, cols=2)
+        table.style = "Light Grid Accent 1"
+        hdr = table.rows[0].cells
+        _set_cell_text(hdr[0], "Section", bold=True)
+        _set_cell_text(hdr[1], "Purpose", bold=True)
+        for idx, section in enumerate(sections, 1):
+            row = table.add_row().cells
+            _set_cell_text(row[0], f"{idx}. {section.title}")
+            purpose = section.content.strip().splitlines()[0] if section.content else ""
+            _set_cell_text(row[1], purpose[:180] or section.title)
+        doc.add_paragraph()
         p = doc.add_paragraph()
+        p.add_run("Word TOC field: ").bold = True
+        p.add_run("Open in Word and refresh fields to populate page numbers.")
         # TOC field across heading levels 1-3; updates on open / F9 in Word.
-        _add_field(p, 'TOC \\o "1-3" \\h \\z \\u')
+        field_p = doc.add_paragraph()
+        _add_field(field_p, 'TOC \\o "1-3" \\h \\z \\u')
         doc.add_page_break()
 
     def _add_sections(self, doc: Document, sections: list[SectionResult]) -> None:
-        for section in sections:
-            doc.add_heading(section.title, level=1)
+        for idx, section in enumerate(sections, 1):
+            doc.add_heading(f"{idx}. {section.title}", level=1)
             self._render_markdownish(doc, section.content)
             doc.add_paragraph()
 
