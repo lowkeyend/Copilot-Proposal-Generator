@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     cors_origins: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000", alias="CORS_ORIGINS"
     )
+    cors_origin_regex: str = Field(
+        default=r"https://.*\.vercel\.app$", alias="CORS_ORIGIN_REGEX"
+    )
 
     # ---- Supported models exposed to the UI ----
     supported_models: list[str] = ["qwen/qwen3-32b", "deepseek/deepseek-chat"]
@@ -105,6 +108,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def cors_origin_pattern(self) -> str:
+        return self.cors_origin_regex.strip()
 
     @property
     def use_qdrant_cloud(self) -> bool:
