@@ -25,8 +25,9 @@ export function EvidenceDrawer({
           No retrieved evidence for this section.
           <br />
           <span className="text-xs">
-            This happens when the knowledge base is empty or the embedding model
-            isn&apos;t available. Content was written from best practice.
+            This means the retrieval step returned no chunks for this section,
+            or the backend could not reach the knowledge base. Content was
+            written from best practice.
           </span>
         </div>
       ) : (

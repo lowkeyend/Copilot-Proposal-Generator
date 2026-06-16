@@ -224,6 +224,8 @@ class KnowledgeBaseStatus(BaseModel):
     collection: str
     points: int = 0
     mode: str = "local"
+    embedding_ready: bool = False
+    embedding_model: str = ""
     message: str = ""
 
 

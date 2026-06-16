@@ -36,13 +36,20 @@ export function KbStatus() {
         status.connected && status.points > 0 ? (
           <Badge tone="success">
             <Database className="h-3 w-3" />
-            {status.points.toLocaleString()} chunks · {status.mode}
+            {status.points.toLocaleString()} chunks - {status.mode}
           </Badge>
         ) : (
-          <Badge tone="warning">
-            <AlertTriangle className="h-3 w-3" />
-            KB empty — using seed patterns
-          </Badge>
+          <div className="space-y-1">
+            <Badge tone="warning">
+              <AlertTriangle className="h-3 w-3" />
+              {status.message || "KB unavailable - using seed patterns"}
+            </Badge>
+            {status.message && (
+              <p className="max-w-md text-[11px] leading-snug text-muted-foreground">
+                {status.message}
+              </p>
+            )}
+          </div>
         )
       ) : (
         <Badge tone="muted">Checking KB…</Badge>

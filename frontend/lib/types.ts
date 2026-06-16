@@ -61,6 +61,8 @@ export interface KnowledgeBaseStatus {
   collection: string;
   points: number;
   mode: string;
+  embedding_ready?: boolean;
+  embedding_model?: string;
   message: string;
 }
 

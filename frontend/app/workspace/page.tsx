@@ -110,6 +110,7 @@ export default function WorkspacePage() {
       );
     });
     store.setSections(seeded);
+    const generatedSections = [...seeded];
 
     try {
       for (let i = 0; i < targets.length; i++) {
@@ -117,6 +118,12 @@ export default function WorkspacePage() {
         setBusySection(t.id);
         const res = await genOne(t.id);
         store.upsertSection(res);
+        const existingIndex = generatedSections.findIndex((s) => s.id === res.id);
+        if (existingIndex >= 0) {
+          generatedSections[existingIndex] = res;
+        } else {
+          generatedSections.push(res);
+        }
         setProgress({ done: i + 1, total: targets.length });
       }
       // persist a saved proposal + initial version
@@ -128,9 +135,10 @@ export default function WorkspacePage() {
           toc: store.toc,
           model: store.model,
         },
-        store.sections
+        generatedSections
       );
       store.setProposalId(persisted.proposal_id);
+      store.setSections(persisted.sections);
     } catch (e: any) {
       setError(e.message || "Generation failed.");
     } finally {

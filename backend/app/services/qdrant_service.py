@@ -11,10 +11,14 @@ source proposal, section name, and proposal family.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 from app.config import get_settings
 from app.models.schemas import EvidenceChunk
+from app.services.embedding_service import get_embedder
+
+logger = logging.getLogger(__name__)
 
 # Candidate payload keys, most-specific first.
 _TEXT_KEYS = ("text", "chunk", "content", "body", "passage", "chunk_text")
@@ -61,6 +65,7 @@ class QdrantService:
         self.settings = get_settings()
         self._client = None
         self._connect_error: Optional[str] = None
+        self._last_search_error: Optional[str] = None
 
     def _client_or_none(self):
         if self._client is not None:
@@ -84,12 +89,15 @@ class QdrantService:
     def status(self) -> dict[str, Any]:
         client = self._client_or_none()
         mode = "cloud" if self.settings.use_qdrant_cloud else "local"
+        embedder = get_embedder()
         if client is None:
             return {
                 "connected": False,
                 "collection": self.settings.qdrant_collection,
                 "points": 0,
                 "mode": mode,
+                "embedding_ready": embedder.ready,
+                "embedding_model": self.settings.embedding_model,
                 "message": self._connect_error or "Qdrant client unavailable.",
             }
         try:
@@ -100,6 +108,8 @@ class QdrantService:
                     "collection": self.settings.qdrant_collection,
                     "points": 0,
                     "mode": mode,
+                    "embedding_ready": embedder.ready,
+                    "embedding_model": self.settings.embedding_model,
                     "message": (
                         f"Collection '{self.settings.qdrant_collection}' not found. "
                         f"Available: {sorted(collections) or 'none'}. "
@@ -114,7 +124,9 @@ class QdrantService:
                 "collection": self.settings.qdrant_collection,
                 "points": int(count),
                 "mode": mode,
-                "message": "ok",
+                "embedding_ready": embedder.ready,
+                "embedding_model": self.settings.embedding_model,
+                "message": self._last_search_error or "ok",
             }
         except Exception as exc:  # pragma: no cover
             return {
@@ -122,6 +134,8 @@ class QdrantService:
                 "collection": self.settings.qdrant_collection,
                 "points": 0,
                 "mode": mode,
+                "embedding_ready": embedder.ready,
+                "embedding_model": self.settings.embedding_model,
                 "message": str(exc),
             }
 
@@ -140,13 +154,16 @@ class QdrantService:
         if client is None:
             return []
         try:
+            self._last_search_error = None
             hits = client.search(
                 collection_name=self.settings.qdrant_collection,
                 query_vector=query_vector,
                 limit=top_k,
                 with_payload=True,
             )
-        except Exception:
+        except Exception as exc:
+            self._last_search_error = str(exc)
+            logger.warning("Qdrant search failed: %s", exc)
             return []
 
         results: list[EvidenceChunk] = []
