@@ -15,7 +15,7 @@ import logging
 from typing import Any, Optional
 
 from app.config import get_settings
-from app.models.schemas import EvidenceChunk
+from app.models.schemas import EvidenceChunk, KnowledgeBaseChunk
 from app.services.embedding_service import get_embedder
 
 logger = logging.getLogger(__name__)
@@ -216,6 +216,105 @@ class QdrantService:
             "section": _first(payload, _SECTION_KEYS),
             "family": _first(payload, _FAMILY_KEYS),
         }
+
+    # ------------------------------------------------------------------
+    def list_chunks(self, limit: int = 500, offset: Optional[str] = None) -> list[KnowledgeBaseChunk]:
+        client = self._client_or_none()
+        if client is None:
+            return []
+        try:
+            points, _next = client.scroll(
+                collection_name=self.settings.qdrant_collection,
+                with_payload=True,
+                with_vectors=False,
+                limit=limit,
+                offset=offset,
+            )
+        except Exception as exc:
+            logger.warning("Qdrant scroll failed: %s", exc)
+            return []
+
+        chunks: list[KnowledgeBaseChunk] = []
+        for p in points:
+            payload = p.payload or {}
+            chunks.append(
+                KnowledgeBaseChunk(
+                    chunk_id=str(getattr(p, "id", "")),
+                    text=_first(payload, _TEXT_KEYS),
+                    source_proposal=_first(payload, _SOURCE_KEYS),
+                    source_section=_first(payload, _SECTION_KEYS),
+                    proposal_family=_first(payload, _FAMILY_KEYS),
+                    score=float(getattr(p, "score", 0.0) or 0.0),
+                    payload=dict(payload),
+                )
+            )
+        return chunks
+
+    def get_chunk(self, chunk_id: str) -> KnowledgeBaseChunk | None:
+        client = self._client_or_none()
+        if client is None:
+            return None
+        try:
+            records = client.retrieve(
+                collection_name=self.settings.qdrant_collection,
+                ids=[chunk_id],
+                with_payload=True,
+                with_vectors=False,
+            )
+        except Exception as exc:
+            logger.warning("Qdrant retrieve failed for %s: %s", chunk_id, exc)
+            return None
+        if not records:
+            return None
+        p = records[0]
+        payload = p.payload or {}
+        return KnowledgeBaseChunk(
+            chunk_id=str(getattr(p, "id", "")),
+            text=_first(payload, _TEXT_KEYS),
+            source_proposal=_first(payload, _SOURCE_KEYS),
+            source_section=_first(payload, _SECTION_KEYS),
+            proposal_family=_first(payload, _FAMILY_KEYS),
+            payload=dict(payload),
+        )
+
+    def update_chunk(
+        self,
+        chunk_id: str,
+        payload: dict[str, Any],
+    ) -> KnowledgeBaseChunk | None:
+        client = self._client_or_none()
+        if client is None:
+            return None
+        existing = self.get_chunk(chunk_id)
+        if existing is None:
+            return None
+        new_payload = {**existing.payload, **payload}
+        try:
+            client.set_payload(
+                collection_name=self.settings.qdrant_collection,
+                payload=new_payload,
+                points=[chunk_id],
+                wait=True,
+            )
+        except Exception as exc:
+            logger.warning("Qdrant set_payload failed for %s: %s", chunk_id, exc)
+            return None
+        return self.get_chunk(chunk_id)
+
+    def delete_chunk(self, chunk_id: str) -> bool:
+        client = self._client_or_none()
+        if client is None:
+            return False
+        try:
+            client.delete(
+                collection_name=self.settings.qdrant_collection,
+                points_selector=[chunk_id],
+                wait=True,
+            )
+            return True
+        except Exception as exc:
+            logger.warning("Qdrant delete failed for %s: %s", chunk_id, exc)
+            return False
 
 
 _qdrant_singleton: Optional[QdrantService] = None

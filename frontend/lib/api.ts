@@ -1,6 +1,8 @@
 import type {
   ClientContext,
   EvidenceChunk,
+  KnowledgeBaseChunk,
+  KnowledgeBaseChunkUpdate,
   KnowledgeBaseStatus,
   ProposalTemplate,
   ReviewIssue,
@@ -37,6 +39,23 @@ export const api = {
 
   models: () =>
     jsonFetch<{ models: string[]; default: string; llm_ready: boolean }>("/models"),
+
+  listKnowledgeChunks: (limit = 200) =>
+    jsonFetch<{ chunks: KnowledgeBaseChunk[]; count: number }>(
+      `/knowledge-base/chunks?limit=${limit}`
+    ),
+
+  updateKnowledgeChunk: (chunkId: string, body: KnowledgeBaseChunkUpdate) =>
+    jsonFetch<KnowledgeBaseChunk>(`/knowledge-base/chunks/${chunkId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  deleteKnowledgeChunk: (chunkId: string) =>
+    jsonFetch<{ ok: boolean; detail: string }>(
+      `/knowledge-base/chunks/${chunkId}`,
+      { method: "DELETE" }
+    ),
 
   generateContext: (body: {
     prompt: string;

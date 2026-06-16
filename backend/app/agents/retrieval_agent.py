@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 
 from app.models.schemas import ClientContext, EvidenceChunk
+from app.services.official_knowledge import temenos_official_chunks
 from app.services.embedding_service import get_embedder
 from app.services.qdrant_service import get_qdrant
 
@@ -116,6 +117,10 @@ def retrieve_for_section(
             proposal_family=proposal_family,
             top_k=top_k,
         )
+
+    temenos_chunks = temenos_official_chunks(query=query, top_k=max(2, top_k // 2))
+    if temenos_chunks:
+        chunks = temenos_chunks + chunks
 
     # Light re-rank: nudge chunks whose family matches.
     if proposal_family:

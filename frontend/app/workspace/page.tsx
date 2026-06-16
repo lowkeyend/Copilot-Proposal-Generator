@@ -11,6 +11,7 @@ import {
   Download,
   FileText,
   Layers3,
+  Database,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useProposalStore } from "@/lib/store";
@@ -227,7 +228,13 @@ export default function WorkspacePage() {
             </div>
           </div>
         </div>
-        <KbStatus />
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => router.push("/knowledge-base")}>
+            <Database className="h-4 w-4" />
+            Knowledge Base
+          </Button>
+          <KbStatus />
+        </div>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[320px_1fr]">

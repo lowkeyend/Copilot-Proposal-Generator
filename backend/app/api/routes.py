@@ -23,6 +23,8 @@ from app.models.schemas import (
     GenerateSectionRequest,
     GenericResponse,
     KnowledgeBaseStatus,
+    KnowledgeBaseChunk,
+    KnowledgeBaseChunkUpdate,
     ProposalRecord,
     ProposalTemplate,
     ProposalVersion,
@@ -65,6 +67,33 @@ def models() -> dict:
         "default": settings.default_model,
         "llm_ready": get_llm().available,
     }
+
+
+@router.get("/knowledge-base/chunks", tags=["knowledge-base"])
+def list_chunks(limit: int = 200) -> dict:
+    chunks = get_qdrant().list_chunks(limit=limit)
+    return {"chunks": [c.model_dump() for c in chunks], "count": len(chunks)}
+
+
+@router.patch("/knowledge-base/chunks/{chunk_id}", response_model=KnowledgeBaseChunk, tags=["knowledge-base"])
+def update_chunk(chunk_id: str, req: KnowledgeBaseChunkUpdate) -> KnowledgeBaseChunk:
+    payload = {
+        k: v
+        for k, v in req.model_dump(exclude_none=True).items()
+        if v is not None and v != ""
+    }
+    updated = get_qdrant().update_chunk(chunk_id, payload)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Chunk not found or update failed.")
+    return updated
+
+
+@router.delete("/knowledge-base/chunks/{chunk_id}", response_model=GenericResponse, tags=["knowledge-base"])
+def delete_chunk(chunk_id: str) -> GenericResponse:
+    ok = get_qdrant().delete_chunk(chunk_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Chunk not found or delete failed.")
+    return GenericResponse(ok=True, detail="deleted")
 
 
 # --------------------------------------------------------------------------

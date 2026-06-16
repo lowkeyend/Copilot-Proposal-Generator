@@ -24,8 +24,10 @@ _SYSTEM = (
     "(short paragraphs, bullets, and pipe tables where useful), but avoid "
     "generic filler, self-referential language, and phrases like 'here's' or "
     "'this proposal outlines'. Ground every claim in the supplied evidence; "
-    "never invent client facts. Do not add a top-level document title - only "
-    "this section."
+    "do not use outside knowledge, memory, or ungrounded estimates. If a fact "
+    "is not supported by the evidence, omit it or phrase it as a proposal "
+    "recommendation rather than a claim. Do not add a top-level document title "
+    "- only this section."
 )
 
 _TEMPLATE = """Write the proposal section titled: "{section_title}".
@@ -57,7 +59,8 @@ with the body. Match a formal proposal style:
   implication where relevant;
 - avoid generic marketing language and vague claims.
 
-Aim for {length} of well-structured content.
+Aim for {length} of well-structured content. Do not condense the material;
+preserve the richness and detail expected in a real proposal.
 """
 
 
@@ -89,13 +92,15 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     )
 
     instruction_block = ""
-    length = "400-650 words"
+    length = "850-1200 words"
     if req.instruction:
         instruction_block = f"REVISION INSTRUCTION (follow precisely):\n{req.instruction}"
         if any(w in req.instruction.lower() for w in ("short", "concise", "brief")):
             length = "180-300 words"
         elif any(w in req.instruction.lower() for w in ("longer", "expand", "detail")):
-            length = "650-900 words"
+            length = "900-1300 words"
+    else:
+        length = "850-1200 words"
 
     llm = get_llm()
     try:
@@ -122,7 +127,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
                 },
             ],
             model=req.model,
-            temperature=0.35,
+            temperature=0.15,
         )
     except LLMError as exc:
         content = (

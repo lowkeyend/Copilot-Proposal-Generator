@@ -117,6 +117,23 @@ class EvidenceChunk(BaseModel):
     chunk_id: str = ""
 
 
+class KnowledgeBaseChunk(BaseModel):
+    chunk_id: str
+    text: str = ""
+    source_proposal: str = ""
+    source_section: str = ""
+    proposal_family: str = ""
+    score: float = 0.0
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class KnowledgeBaseChunkUpdate(BaseModel):
+    text: Optional[str] = None
+    source_proposal: Optional[str] = None
+    source_section: Optional[str] = None
+    proposal_family: Optional[str] = None
+
+
 # --------------------------------------------------------------------------
 # Section generation (Agents 7 & 6 combined per-section)
 # --------------------------------------------------------------------------

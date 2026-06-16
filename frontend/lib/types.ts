@@ -66,6 +66,23 @@ export interface KnowledgeBaseStatus {
   message: string;
 }
 
+export interface KnowledgeBaseChunk {
+  chunk_id: string;
+  text: string;
+  source_proposal: string;
+  source_section: string;
+  proposal_family: string;
+  score: number;
+  payload: Record<string, unknown>;
+}
+
+export interface KnowledgeBaseChunkUpdate {
+  text?: string;
+  source_proposal?: string;
+  source_section?: string;
+  proposal_family?: string;
+}
+
 export interface VersionMeta {
   version_id: string;
   label: string;
