@@ -1,132 +1,81 @@
 # Proposal Copilot
 
-Generate professional, client-ready proposals from your **existing proposal
-knowledge base**. The platform learns patterns from previously uploaded
-proposals, retrieves relevant content, builds an editable plan, writes each
-section with an LLM, lets you review/edit/regenerate/lock sections in a
-workspace, shows the evidence behind every section, and exports a branded DOCX.
+Generate client-ready proposals from an existing proposal knowledge base.
+This repo is now local-first: you can clone it on another laptop and run it on
+`localhost` without Railway or Vercel.
 
-> **Local-first, cloud-ready.** Everything runs on `localhost` with zero cloud
-> dependencies except the LLM. The config layer is built so you can later move
-> to Qdrant Cloud, Supabase, Railway, and Vercel by changing env vars only.
+The app includes:
+- section-by-section proposal generation
+- evidence drawer for retrieved chunks
+- knowledge base browser/editor/deleter
+- Temenos-specific grounding from official product summaries
+- local fallback generation when OpenRouter is not configured
 
----
+## Local setup
 
-## Architecture
+### Prerequisites
 
-```
-proposal-copilot/
-├── backend/            FastAPI + agents + services
-│   └── app/
-│       ├── api/        HTTP routes
-│       ├── agents/     9 agents (context → classify → patterns → TOC → retrieve → write → review)
-│       ├── services/   Qdrant, embeddings, LLM (OpenRouter), storage, DOCX
-│       ├── models/     Pydantic schemas
-│       └── utils/
-├── frontend/           Next.js + TypeScript + Tailwind + Framer Motion
-├── generated/          Exported .docx files
-├── storage/            Saved proposals, versions, templates, pattern_registry.json
-├── templates/          (reserved for branded .docx templates / assets)
-├── assets/             Logos / brand assets
-└── qdrant_local_db/    ← your existing Qdrant DB from Notebook 1 goes here
-```
+- Python 3.10+
+- Node.js 18+
+- Git
 
-### Agents
+No external API key is required for the local fallback mode.
+If you add `OPENROUTER_API_KEY`, the app will use it for richer generation.
 
-| # | Agent | Role |
-|---|-------|------|
-| 1 | Client Context | Prompt → structured `{client, industry, project_type, tone, instructions}` |
-| 2 | Proposal Classifier | Detects the proposal *family* (prompt + KB signals) |
-| 3 | Pattern Discovery | **Learns** section patterns from the corpus → `pattern_registry.json` |
-| 4 | Template Suggestion | Suggests best-fit pattern; user can accept/modify |
-| 5 | Dynamic TOC Builder | Editable outline = the generation plan |
-| 6 | Retrieval | Per-section, metadata-aware chunk retrieval from Qdrant |
-| 7 | Section Writer | Writes each section **one at a time**, grounded in evidence |
-| 8 | Consistency Reviewer | Client/project/terminology/tone/coherence checks |
-| 9 | DOCX Composer | Branded DOCX: TOC field, headings, tables, headers/footers, page numbers |
+### Start everything on localhost
 
----
-
-## Prerequisites
-
-- **Python 3.10+**
-- **Node.js 18+**
-- An **OpenRouter API key** (https://openrouter.ai/keys)
-- Your **existing Qdrant DB** from Notebook 1 (collection `proposal_knowledge_base`).
-  Copy/point it into `qdrant_local_db/`. *Ingestion is never rebuilt by this app.*
-
-> The app runs even **without** the Qdrant DB attached — it falls back to seed
-> patterns and writes sections from best practice, so you can demo the full UI
-> immediately. Attach the DB to light up retrieval + evidence.
-
----
-
-## Quick start
-
-### 1. Backend
+From the repo root:
 
 ```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1        # macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-copy .env.example .env              # macOS/Linux: cp .env.example .env
-# edit .env -> set OPENROUTER_API_KEY
-python -m app.main                  # serves http://localhost:8000  (docs at /docs)
+.\run_local.ps1
 ```
 
-### 2. Frontend
+That script starts:
+- backend on `http://localhost:8000`
+- frontend on `http://localhost:3000`
+
+If you prefer separate terminals:
 
 ```powershell
-cd frontend
-npm install
-copy .env.local.example .env.local  # macOS/Linux: cp ...
-npm run dev                         # http://localhost:3000
+.\run_backend.ps1
+.\run_frontend.ps1
 ```
 
-Open **http://localhost:3000**, fill in the request, and click **Generate Proposal**.
+The first run will create:
+- `backend/.env` from `backend/.env.example`
+- `frontend/.env.local` from `frontend/.env.local.example`
 
-Helper scripts at the repo root: `run_backend.ps1`, `run_frontend.ps1`.
+So a fresh clone does not need manual env setup for local development.
 
----
+## How it works
 
-## Using it
+1. Page 1 extracts context and proposal family from your prompt.
+2. Page 2 builds a TOC.
+3. Each section is written one at a time.
+4. Retrieval tries Qdrant first.
+5. If embeddings are unavailable, the backend falls back to lexical matching
+   and Temenos official knowledge summaries.
+6. If OpenRouter is not configured, the section writer falls back to a local
+   evidence-grounded writer so generation still works.
 
-1. **Setup (Page 1)** — enter client/industry/project, a natural-language
-   prompt, pick a model (`deepseek/deepseek-chat` or `qwen/qwen3-32b`), and
-   generate. The system extracts context, classifies the family, suggests a
-   discovered pattern, and builds an editable TOC.
-2. **Workspace (Page 2)** — edit the TOC (add/rename/reorder/remove), then
-   generate section-by-section with live progress. Each **section card** can be
-   edited, regenerated (with an instruction like *"make it shorter"*), locked,
-   deleted, and reordered. The **evidence drawer** shows the exact chunks +
-   source proposal/section behind each section.
-3. **Review** — run the consistency reviewer.
-4. **Versions** — every generation/save creates a restorable version.
-5. **Export** — download a branded DOCX.
+## Knowledge base
 
----
+- The app reads from the existing Qdrant collection `proposal_knowledge_base`.
+- Use the Knowledge Base tab in the workspace to inspect, edit, and delete
+  chunks.
+- Deleting a chunk removes it from Qdrant.
 
-## API endpoints
+## Files you should know
 
-`POST /generate-context` · `POST /suggest-template` · `POST /build-toc` ·
-`POST /generate-section` · `POST /generate-proposal` · `POST /regenerate-section` ·
-`POST /review-proposal` · `POST /export-docx` · `GET /templates` · `GET /versions`
+- `backend/app/main.py` - FastAPI entrypoint and CORS
+- `backend/app/agents/retrieval_agent.py` - evidence retrieval
+- `backend/app/agents/section_writer.py` - section generation
+- `backend/app/services/qdrant_service.py` - Qdrant read/update/delete
+- `frontend/app/workspace/page.tsx` - proposal workspace
+- `frontend/app/knowledge-base/page.tsx` - chunk browser/editor
 
-Plus utilities: `GET /status`, `GET /models`, `GET /patterns`,
-`POST /discover-patterns`, template CRUD, proposal/version reads, `/files/*` downloads.
-Full interactive docs at **http://localhost:8000/docs**.
+## Optional cloud deployment
 
----
+Cloud deployment is still supported, but it is optional. If you want to use
+Railway/Vercel later, update env vars instead of changing code.
 
-## Future deployment (no code changes, env only)
-
-| Local | Cloud | How |
-|-------|-------|-----|
-| Local Qdrant | Qdrant Cloud | set `QDRANT_URL` + `QDRANT_API_KEY` |
-| Local storage | Supabase | implement the `StorageService` interface for Supabase |
-| FastAPI | Railway | deploy `backend/`, set env vars |
-| Next.js | Vercel | deploy `frontend/`, set `NEXT_PUBLIC_API_BASE` |
-
-No `localhost` is hardcoded — see `backend/app/config.py` and
-`frontend/lib/api.ts`.

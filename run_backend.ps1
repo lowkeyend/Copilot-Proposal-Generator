@@ -13,7 +13,7 @@ pip install -q -r requirements.txt
 
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
-    Write-Host "Created backend\.env — add your OPENROUTER_API_KEY." -ForegroundColor Yellow
+    Write-Host "Created backend\.env. OpenRouter is optional; the app can run locally without it." -ForegroundColor Yellow
 }
 
 Write-Host "Starting API at http://localhost:8000 (docs at /docs)" -ForegroundColor Green
