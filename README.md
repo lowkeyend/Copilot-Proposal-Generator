@@ -74,8 +74,32 @@ So a fresh clone does not need manual env setup for local development.
 - `frontend/app/workspace/page.tsx` - proposal workspace
 - `frontend/app/knowledge-base/page.tsx` - chunk browser/editor
 
-## Optional cloud deployment
+## Cloud deployment
 
-Cloud deployment is still supported, but it is optional. If you want to use
-Railway/Vercel later, update env vars instead of changing code.
+For a laptop-free deployment:
 
+- deploy `frontend/` to Vercel
+- deploy `backend/` as a Docker service (Hugging Face Docker Space, Cloud Run, Render, Fly.io)
+- keep vectors in Qdrant Cloud
+- use hosted embeddings instead of local `sentence-transformers`
+
+Recommended hosted embedding setup:
+
+```env
+EMBEDDING_PROVIDER=jina
+EMBEDDING_MODEL=jina-embeddings-v3
+EMBEDDING_API_KEY=your_jina_api_key
+QDRANT_URL=your_qdrant_cloud_url
+QDRANT_API_KEY=your_qdrant_cloud_api_key
+OPENROUTER_API_KEY=your_openrouter_api_key
+```
+
+If you switch embedding models, re-embed the collection once:
+
+```powershell
+cd backend
+python reembed_qdrant.py
+```
+
+The collection dimension must match the new model. The script will stop with a
+clear error if it does not.

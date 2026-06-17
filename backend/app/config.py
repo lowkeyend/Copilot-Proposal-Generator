@@ -49,8 +49,13 @@ class Settings(BaseSettings):
     )
 
     # ---- Embeddings ----
+    embedding_provider: str = Field(default="local", alias="EMBEDDING_PROVIDER")
     embedding_model: str = Field(
         default="BAAI/bge-large-en-v1.5", alias="EMBEDDING_MODEL"
+    )
+    embedding_api_key: str = Field(default="", alias="EMBEDDING_API_KEY")
+    embedding_api_base_url: str = Field(
+        default="", alias="EMBEDDING_API_BASE_URL"
     )
     embedding_query_prefix: str = Field(
         default="Represent this sentence for searching relevant passages:",
@@ -116,6 +121,25 @@ class Settings(BaseSettings):
     @property
     def use_qdrant_cloud(self) -> bool:
         return bool(self.qdrant_url.strip())
+
+    @property
+    def use_hosted_embeddings(self) -> bool:
+        return self.embedding_provider.strip().lower() in {
+            "openai",
+            "hosted",
+            "jina",
+            "qdrant",
+        }
+
+    @property
+    def embedding_api_root(self) -> str:
+        explicit = self.embedding_api_base_url.strip()
+        if explicit:
+            return explicit
+        provider = self.embedding_provider.strip().lower()
+        if provider == "jina":
+            return "https://api.jina.ai/v1"
+        return "https://api.openai.com/v1"
 
     def ensure_dirs(self) -> None:
         for p in (

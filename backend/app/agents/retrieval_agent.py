@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 
+from app.config import get_settings
 from app.models.schemas import ClientContext, EvidenceChunk
 from app.services.official_knowledge import temenos_official_chunks
 from app.services.embedding_service import get_embedder
@@ -92,6 +93,7 @@ def retrieve_for_section(
     top_k: int = 6,
 ) -> list[EvidenceChunk]:
     qdrant = get_qdrant()
+    settings = get_settings()
 
     # Build a section-specific query, not a generic one.
     query_parts = [
@@ -103,8 +105,15 @@ def retrieve_for_section(
     query = " ".join(p for p in query_parts if p).strip()
 
     try:
-        vector = get_embedder().embed_query(query)
-        chunks = qdrant.search(vector, top_k=top_k, keywords=keywords)
+        if settings.embedding_provider.strip().lower() == "qdrant":
+            chunks = qdrant.search_text(
+                query_text=query,
+                model=settings.embedding_model,
+                top_k=top_k,
+            )
+        else:
+            vector = get_embedder().embed_query(query)
+            chunks = qdrant.search(vector, top_k=top_k, keywords=keywords)
     except Exception:
         chunks = []
 

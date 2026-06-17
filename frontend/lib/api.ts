@@ -11,8 +11,16 @@ import type {
   VersionMeta,
 } from "./types";
 
-const BASE =
-  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "http://localhost:8000";
+const CLOUD_BASE = "https://fawadsidd17-proposal-copilot-backend.hf.space";
+const rawBase = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "";
+
+const BASE = rawBase
+  ? rawBase.includes("backend-production-a3cd.up.railway.app")
+    ? CLOUD_BASE
+    : rawBase
+  : typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app")
+    ? CLOUD_BASE
+    : "http://localhost:8000";
 
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

@@ -74,9 +74,13 @@ class QdrantService:
             from qdrant_client import QdrantClient
 
             if self.settings.use_qdrant_cloud:
+                kwargs: dict[str, Any] = {}
+                if self.settings.embedding_provider.strip().lower() == "qdrant":
+                    kwargs["cloud_inference"] = True
                 self._client = QdrantClient(
                     url=self.settings.qdrant_url,
                     api_key=self.settings.qdrant_api_key or None,
+                    **kwargs,
                 )
             else:
                 self._client = QdrantClient(path=str(self.settings.qdrant_local_path))
@@ -97,6 +101,7 @@ class QdrantService:
                 "points": 0,
                 "mode": mode,
                 "embedding_ready": embedder.ready,
+                "embedding_provider": self.settings.embedding_provider,
                 "embedding_model": self.settings.embedding_model,
                 "message": self._connect_error or "Qdrant client unavailable.",
             }
@@ -109,6 +114,7 @@ class QdrantService:
                     "points": 0,
                     "mode": mode,
                     "embedding_ready": embedder.ready,
+                    "embedding_provider": self.settings.embedding_provider,
                     "embedding_model": self.settings.embedding_model,
                     "message": (
                         f"Collection '{self.settings.qdrant_collection}' not found. "
@@ -125,6 +131,7 @@ class QdrantService:
                 "points": int(count),
                 "mode": mode,
                 "embedding_ready": embedder.ready,
+                "embedding_provider": self.settings.embedding_provider,
                 "embedding_model": self.settings.embedding_model,
                 "message": self._last_search_error or "ok",
             }
@@ -135,6 +142,7 @@ class QdrantService:
                 "points": 0,
                 "mode": mode,
                 "embedding_ready": embedder.ready,
+                "embedding_provider": self.settings.embedding_provider,
                 "embedding_model": self.settings.embedding_model,
                 "message": str(exc),
             }
@@ -164,6 +172,45 @@ class QdrantService:
         except Exception as exc:
             self._last_search_error = str(exc)
             logger.warning("Qdrant search failed: %s", exc)
+            return []
+
+        results: list[EvidenceChunk] = []
+        for h in hits:
+            payload = h.payload or {}
+            results.append(
+                EvidenceChunk(
+                    text=_first(payload, _TEXT_KEYS),
+                    score=float(getattr(h, "score", 0.0) or 0.0),
+                    source_proposal=_first(payload, _SOURCE_KEYS),
+                    source_section=_first(payload, _SECTION_KEYS),
+                    proposal_family=_first(payload, _FAMILY_KEYS),
+                    chunk_id=str(getattr(h, "id", "")),
+                )
+            )
+        return results
+
+    def search_text(
+        self,
+        query_text: str,
+        model: str,
+        top_k: int = 6,
+    ) -> list[EvidenceChunk]:
+        client = self._client_or_none()
+        if client is None:
+            return []
+        try:
+            from qdrant_client import models
+
+            self._last_search_error = None
+            hits = client.query_points(
+                collection_name=self.settings.qdrant_collection,
+                query=models.Document(text=query_text, model=model),
+                with_payload=True,
+                limit=top_k,
+            ).points
+        except Exception as exc:
+            self._last_search_error = str(exc)
+            logger.warning("Qdrant text search failed: %s", exc)
             return []
 
         results: list[EvidenceChunk] = []

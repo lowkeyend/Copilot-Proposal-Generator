@@ -9,7 +9,7 @@ if (-not (Test-Path ".venv")) {
 & ".\.venv\Scripts\Activate.ps1"
 
 Write-Host "Installing dependencies..." -ForegroundColor Cyan
-pip install -q -r requirements.txt
+pip install -q -r requirements.local.txt
 
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
