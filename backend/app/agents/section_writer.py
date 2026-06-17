@@ -24,13 +24,14 @@ def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceC
     client = req.context.client_name or "the client"
     industry = req.context.industry or "the industry"
     project = req.context.project_type or req.proposal_family or "the engagement"
+    product = req.context.canonical_product or "the proposed solution"
     family = req.proposal_family or "the proposal family"
     tone = req.context.tone or "Formal"
 
     lead = (
         f"### {req.section_title}\n\n"
         f"{client} requires a section that aligns the proposed solution with its "
-        f"{project.lower()} objectives, the selected {family} approach, and the "
+        f"{project.lower()} objectives, the selected {product} solution, the {family} approach, and the "
         f"operating realities of {industry.lower()}. This section is written in "
         f"a {tone.lower()} tone and is grounded only in retrieved evidence and "
         f"official product context."
@@ -87,10 +88,10 @@ def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceC
 
     if "Temenos" in (req.proposal_family or "") or "Temenos" in project:
         paragraphs.append(
-            "\n\nFor Temenos-specific proposals, the section should consistently "
-            "reference the platform, its modular banking scope, cloud-native "
-            "positioning, and the delivery benefits documented in the official "
-            "Temenos summaries and proposal corpus."
+            f"\n\nFor Temenos-specific proposals, the section should consistently "
+            f"reference {product}, its modular banking scope, cloud-native "
+            "positioning, and the delivery benefits documented in the retrieved "
+            "evidence."
         )
 
     return "".join(paragraphs)
@@ -118,6 +119,9 @@ CLIENT CONTEXT
 - Client: {client}
 - Industry: {industry}
 - Project / solution: {project}
+- Current client profile: {client_profile}
+- Implementation context: {implementation_context}
+- Canonical product name: {canonical_product}
 - Proposal family: {family}
 - Tone: {tone}
 - Special instructions: {special}
@@ -137,6 +141,25 @@ QUALITY CONTROLS
 - Detail profile: {detail_level}
 - Evidence-only mode: {require_evidence}
 - Official Temenos website evidence included: {include_temenos}
+- Treat retrieved chunks as reusable proposal evidence, not as facts about the
+  current client when they conflict with CLIENT CONTEXT.
+- The CLIENT CONTEXT is the ground truth for client type, product name, and
+  implementation context.
+- Use the client name exactly as "{client}" throughout.
+- Use the canonical product name "{canonical_product}" consistently. Do not
+  alternate between product names unless the evidence clearly distinguishes
+  multiple products.
+- If current client profile is not greenfield, do not call the client a
+  greenfield bank, brand-new bank, new market entrant, or rapid-market-entry
+  institution even if a retrieved source chunk says that about another client.
+- For established-bank modernization/migration, explicitly connect migration
+  planning with data protection, security controls, governance, validation, and
+  cutover assurance when evidence supports those topics.
+- If PRINCE2, Scrum, agile, governance, steering committee, PMO, or delivery
+  model terms appear in evidence, keep those references coherent across delivery
+  and governance language.
+- Use "cloud-native architecture with deployment flexibility" when discussing
+  cloud positioning unless the evidence explicitly requires another distinction.
 
 Write the section now. The heading is added by the system, so begin directly
 with the body. Match a formal proposal style:
@@ -230,11 +253,92 @@ def _evidence_enrichment(evidence: list[EvidenceChunk], needed_words: int) -> st
 
 def _strip_leading_heading(content: str, section_title: str) -> str:
     lines = content.strip().splitlines()
-    while lines and re.match(r"^\s{0,3}#{1,2}\s+", lines[0]):
+    while lines and re.match(r"^\s{0,3}#{1,3}\s+", lines[0]):
         lines = lines[1:]
         while lines and not lines[0].strip():
             lines = lines[1:]
     return "\n".join(lines).strip()
+
+
+def _canonical_client_name(value: str) -> str:
+    cleaned = " ".join((value or "").split())
+    lowered = cleaned.lower()
+    if lowered.startswith("bank ") and lowered.endswith(" bank"):
+        middle = cleaned[5:-5].strip()
+        if middle:
+            return f"Bank {middle}"
+    if lowered in {"alfalah", "alfalah bank", "alfalahbank", "bank alfalah bank", "alfalah bank limited"}:
+        return "Bank Alfalah"
+    return cleaned
+
+
+def _is_established_context(req: GenerateSectionRequest) -> bool:
+    context_text = " ".join(
+        [
+            req.context.client_profile or "",
+            req.context.implementation_context or "",
+            req.context.project_type or "",
+            req.prompt or "",
+        ]
+    ).lower()
+    if req.context.client_profile == "greenfield":
+        return False
+    return "greenfield" not in context_text or "established" in context_text or "migration" in context_text
+
+
+def _apply_context_guardrails(content: str, req: GenerateSectionRequest) -> str:
+    result = content.strip()
+    client = _canonical_client_name(req.context.client_name or "")
+    if client:
+        result = re.sub(re.escape(client), client, result, flags=re.IGNORECASE)
+        if client == "Bank Alfalah":
+            for pattern in (
+                r"\bBank\s+Alfalah\s+Bank\b",
+                r"\bAlFalah\s+Bank\b",
+                r"\bAlfalah\s+Bank\b",
+                r"\balfalah\s+bank\b",
+                r"(?<!\bBank\s)\balfalah\b",
+            ):
+                result = re.sub(pattern, client, result, flags=re.IGNORECASE)
+
+    product = (req.context.canonical_product or "").strip()
+    if product:
+        for alias in (
+            r"\bTemenos\s+Core\s+Banking\b",
+            r"\bTemenos\s+Banking\s+Platform\b",
+            r"\bTemenos\s+core\s+banking\s+platform\b",
+        ):
+            result = re.sub(alias, product, result, flags=re.IGNORECASE)
+
+    if _is_established_context(req):
+        replacements = {
+            r"\bgreenfield\s+bank\b": "established bank",
+            r"\bgreenfield\s+environment\b": "modernization environment",
+            r"\bgreenfield\s+implementation\b": "modernization implementation",
+            r"\bgreenfield\b": "modernization",
+            r"\bbrand[- ]new\s+bank\b": "existing banking institution",
+            r"\bnew\s+digital\s+bank\b": "existing digital banking operation",
+            r"\bnew\s+bank\b": "existing bank",
+            r"\brapid\s+market\s+entry\b": "controlled modernization and migration",
+            r"\bmarket-entry\s+launch\b": "modernization launch",
+            r"\bMVP\s+launch\b": "phased rollout",
+        }
+        for pattern, replacement in replacements.items():
+            result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+
+    result = re.sub(
+        r"\bcloud-native\s+and\s+cloud-agnostic\b",
+        "cloud-native architecture with deployment flexibility",
+        result,
+        flags=re.IGNORECASE,
+    )
+    result = re.sub(
+        r"\bcloud-agnostic\s+and\s+cloud-native\b",
+        "cloud-native architecture with deployment flexibility",
+        result,
+        flags=re.IGNORECASE,
+    )
+    return result.strip()
 
 
 async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
@@ -279,6 +383,11 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
                         client=req.context.client_name or "the client",
                         industry=req.context.industry or "—",
                         project=req.context.project_type or "—",
+                        client_profile=req.context.client_profile or "established",
+                        implementation_context=req.context.implementation_context
+                        or "Modernization / migration for an existing institution",
+                        canonical_product=req.context.canonical_product
+                        or "Temenos Transact",
                         family=req.proposal_family or "—",
                         tone=req.context.tone or "Formal",
                         special=req.context.special_instructions or "none",
@@ -329,6 +438,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     except LLMError as exc:
         content = _local_section_content(req, evidence, length)
 
+    content = _apply_context_guardrails(content, req)
     return SectionResult(
         title=req.section_title,
         content=_strip_leading_heading(content, req.section_title),

@@ -265,6 +265,62 @@ export default function WorkspacePage() {
           <Card>
             <CardContent className="space-y-3 pt-5">
               <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold">Context Guardrails</h2>
+                <Badge tone={store.context.client_profile === "greenfield" ? "accent" : "muted"}>
+                  {store.context.client_profile || "established"}
+                </Badge>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Client Profile
+                </label>
+                <Select
+                  value={store.context.client_profile || "established"}
+                  onChange={(e) =>
+                    store.setContext({
+                      client_profile: e.target.value as "established" | "greenfield" | "unknown",
+                    })
+                  }
+                >
+                  <option value="established">Established / modernization</option>
+                  <option value="greenfield">Greenfield / new bank</option>
+                  <option value="unknown">Unknown / decide from prompt</option>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Canonical Product
+                </label>
+                <input
+                  value={store.context.canonical_product || "Temenos Transact"}
+                  onChange={(e) =>
+                    store.setContext({ canonical_product: e.target.value })
+                  }
+                  className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Implementation Context
+                </label>
+                <textarea
+                  rows={2}
+                  value={
+                    store.context.implementation_context ||
+                    "Modernization / migration for an existing institution"
+                  }
+                  onChange={(e) =>
+                    store.setContext({ implementation_context: e.target.value })
+                  }
+                  className="w-full rounded-md border border-input bg-card px-2 py-1.5 text-xs"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="space-y-3 pt-5">
+              <div className="flex items-center justify-between">
                 <h2 className="flex items-center gap-2 text-sm font-semibold">
                   <SlidersHorizontal className="h-4 w-4" />
                   Proposal Quality

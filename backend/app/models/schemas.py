@@ -29,6 +29,9 @@ class ClientContext(BaseModel):
     client_name: str = ""
     industry: str = ""
     project_type: str = ""
+    client_profile: Literal["established", "greenfield", "unknown"] = "established"
+    implementation_context: str = "Modernization / migration for an existing institution"
+    canonical_product: str = "Temenos Transact"
     tone: str = "Formal"
     special_instructions: str = ""
 
@@ -40,6 +43,9 @@ class GenerateContextRequest(BaseModel):
     client_name: Optional[str] = None
     industry: Optional[str] = None
     project_type: Optional[str] = None
+    client_profile: Optional[Literal["established", "greenfield", "unknown"]] = None
+    implementation_context: Optional[str] = None
+    canonical_product: Optional[str] = None
 
 
 class GenerateContextResponse(BaseModel):

@@ -2,6 +2,9 @@ export interface ClientContext {
   client_name: string;
   industry: string;
   project_type: string;
+  client_profile: "established" | "greenfield" | "unknown";
+  implementation_context: string;
+  canonical_product: string;
   tone: string;
   special_instructions: string;
 }

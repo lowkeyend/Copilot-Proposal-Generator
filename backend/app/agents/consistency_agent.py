@@ -29,6 +29,10 @@ Check for: client-name consistency, project/product naming consistency,
 terminology drift, tone consistency ({tone}), and cross-section coherence
 (contradictions, repetition, gaps).
 
+Current client profile: {client_profile}
+Implementation context: {implementation_context}
+Canonical product name: {canonical_product}
+
 Return JSON:
 {{
   "issues": [
@@ -46,6 +50,7 @@ def _deterministic_checks(req: ReviewProposalRequest) -> list[ReviewIssue]:
     issues: list[ReviewIssue] = []
     client = req.context.client_name.strip()
     full_text = "\n".join(s.content for s in req.sections)
+    full_lower = full_text.lower()
 
     if client:
         # Detect alternate capitalisations / near-variants of the client name.
@@ -71,6 +76,106 @@ def _deterministic_checks(req: ReviewProposalRequest) -> list[ReviewIssue]:
                     message=f"Client not referenced in: {', '.join(missing[:5])}.",
                 )
             )
+
+    if req.context.client_profile != "greenfield":
+        greenfield_terms = [
+            "greenfield bank",
+            "greenfield environment",
+            "greenfield implementation",
+            "brand-new bank",
+            "brand new bank",
+            "new market entrant",
+            "rapid market entry",
+            "mvp launch",
+        ]
+        for term in greenfield_terms:
+            if term in full_lower:
+                issues.append(
+                    ReviewIssue(
+                        severity="error",
+                        category="Context mismatch",
+                        message=(
+                            f"Found '{term}' even though the current client profile is "
+                            f"'{req.context.client_profile}'. Do not transfer greenfield facts from corpus chunks."
+                        ),
+                    )
+                )
+                break
+
+    canonical_product = (req.context.canonical_product or "").strip()
+    if canonical_product:
+        product_aliases = [
+            "Temenos Banking Platform",
+            "Temenos Core Banking",
+            "Temenos core banking platform",
+        ]
+        used_aliases = [
+            alias for alias in product_aliases if alias.lower() in full_lower and alias != canonical_product
+        ]
+        if used_aliases:
+            issues.append(
+                ReviewIssue(
+                    severity="warning",
+                    category="Product naming",
+                    message=(
+                        f"Use canonical product name '{canonical_product}' consistently; "
+                        f"found alternate naming: {', '.join(used_aliases)}."
+                    ),
+                )
+            )
+
+    if "cloud-native" in full_lower and "cloud-agnostic" in full_lower:
+        issues.append(
+            ReviewIssue(
+                severity="info",
+                category="Terminology drift",
+                message=(
+                    "Both 'cloud-native' and 'cloud-agnostic' appear. Prefer "
+                    "'cloud-native architecture with deployment flexibility' unless the distinction is intentional."
+                ),
+            )
+        )
+
+    if "prince2" in full_lower and "scrum" in full_lower:
+        delivery_mentions = [
+            s.title
+            for s in req.sections
+            if re.search(r"implementation|delivery", s.title, flags=re.IGNORECASE)
+            and re.search(r"prince2|scrum", s.content, flags=re.IGNORECASE)
+        ]
+        governance_mentions = [
+            s.title
+            for s in req.sections
+            if re.search(r"governance|project management", s.title, flags=re.IGNORECASE)
+            and re.search(r"prince2|scrum", s.content, flags=re.IGNORECASE)
+        ]
+        if delivery_mentions and not governance_mentions:
+            issues.append(
+                ReviewIssue(
+                    severity="warning",
+                    category="Cross-section coherence",
+                    message="Delivery references PRINCE2/Scrum but governance sections do not explicitly align to those frameworks.",
+                    section_title=", ".join(delivery_mentions[:3]),
+                )
+            )
+
+    if "migration" in full_lower and re.search(r"security|compliance|data protection", full_lower):
+        migration_sections = [
+            s for s in req.sections if re.search(r"migration", s.title, flags=re.IGNORECASE)
+        ]
+        for section in migration_sections:
+            if not re.search(r"security|compliance|data protection|encryption|access control", section.content, flags=re.IGNORECASE):
+                issues.append(
+                    ReviewIssue(
+                        severity="warning",
+                        category="Cross-section coherence",
+                        message=(
+                            "Migration section should explicitly link data migration with security, "
+                            "data protection, validation, and cutover controls."
+                        ),
+                        section_title=section.title,
+                    )
+                )
 
     # Empty / stub sections.
     for s in req.sections:
@@ -106,6 +211,11 @@ async def run_consistency_agent(
                         "content": _TEMPLATE.format(
                             client=req.context.client_name or "?",
                             project=req.context.project_type or "?",
+                            client_profile=req.context.client_profile or "established",
+                            implementation_context=req.context.implementation_context
+                            or "Modernization / migration for an existing institution",
+                            canonical_product=req.context.canonical_product
+                            or "Temenos Transact",
                             tone=req.context.tone or "Formal",
                             sections=sections_blob,
                         ),

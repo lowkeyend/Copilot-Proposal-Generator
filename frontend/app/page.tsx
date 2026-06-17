@@ -53,6 +53,9 @@ export default function SetupPage() {
         client_name: store.context.client_name || undefined,
         industry: store.context.industry || undefined,
         project_type: store.context.project_type || undefined,
+        client_profile: store.context.client_profile || "established",
+        implementation_context: store.context.implementation_context || undefined,
+        canonical_product: store.context.canonical_product || undefined,
       });
       store.setContext(ctx.context);
       store.setProposalFamily(ctx.proposal_family);
@@ -154,6 +157,47 @@ export default function SetupPage() {
                   value={store.context.project_type}
                   onChange={(e) =>
                     store.setContext({ project_type: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label>Client Profile</Label>
+                <Select
+                  value={store.context.client_profile || "established"}
+                  onChange={(e) =>
+                    store.setContext({
+                      client_profile: e.target.value as "established" | "greenfield" | "unknown",
+                    })
+                  }
+                >
+                  <option value="established">Established / modernization</option>
+                  <option value="greenfield">Greenfield / new bank</option>
+                  <option value="unknown">Unknown / decide from prompt</option>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Canonical Product</Label>
+                <Input
+                  placeholder="Temenos Transact"
+                  value={store.context.canonical_product || "Temenos Transact"}
+                  onChange={(e) =>
+                    store.setContext({ canonical_product: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Implementation Context</Label>
+                <Input
+                  placeholder="Modernization / migration for an existing institution"
+                  value={
+                    store.context.implementation_context ||
+                    "Modernization / migration for an existing institution"
+                  }
+                  onChange={(e) =>
+                    store.setContext({ implementation_context: e.target.value })
                   }
                 />
               </div>

@@ -53,6 +53,9 @@ const emptyContext: ClientContext = {
   client_name: "",
   industry: "",
   project_type: "",
+  client_profile: "established",
+  implementation_context: "Modernization / migration for an existing institution",
+  canonical_product: "Temenos Transact",
   tone: "Formal",
   special_instructions: "",
 };

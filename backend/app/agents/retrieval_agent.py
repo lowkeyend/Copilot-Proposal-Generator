@@ -18,6 +18,19 @@ from app.services.official_knowledge import temenos_official_chunks
 from app.services.embedding_service import get_embedder
 from app.services.qdrant_service import get_qdrant
 
+_GREENFIELD_TERMS = (
+    "greenfield bank",
+    "greenfield environment",
+    "greenfield implementation",
+    "brand-new bank",
+    "brand new bank",
+    "new bank",
+    "new digital bank",
+    "rapid market entry",
+    "market entry",
+    "mvp launch",
+)
+
 
 def _tokens(text: str) -> set[str]:
     return {t for t in re.findall(r"[a-z0-9]+", text.lower()) if len(t) > 2}
@@ -122,6 +135,41 @@ def _lexical_fallback(
     return [chunk for _score, chunk in scored[:top_k]]
 
 
+def _greenfield_allowed(context: ClientContext, query: str) -> bool:
+    if context.client_profile == "greenfield":
+        return True
+    explicit = " ".join(
+        [
+            query,
+            context.implementation_context or "",
+            context.special_instructions or "",
+        ]
+    ).lower()
+    return any(term in explicit for term in ("greenfield", "new bank", "new licence", "new license"))
+
+
+def _is_greenfield_specific(chunk: EvidenceChunk) -> bool:
+    haystack = " ".join(
+        [
+            chunk.text or "",
+            chunk.summary or "",
+            chunk.source_section or "",
+            chunk.source_proposal or "",
+        ]
+    ).lower()
+    return any(term in haystack for term in _GREENFIELD_TERMS)
+
+
+def _filter_context_mismatch(
+    chunks: list[EvidenceChunk], context: ClientContext, query: str
+) -> list[EvidenceChunk]:
+    if _greenfield_allowed(context, query):
+        return chunks
+    if context.client_profile not in {"established", "unknown"}:
+        return chunks
+    return [chunk for chunk in chunks if not _is_greenfield_specific(chunk)]
+
+
 def retrieve_for_section(
     section_title: str,
     keywords: list[str],
@@ -183,6 +231,8 @@ def retrieve_for_section(
     if include_temenos_official:
         temenos_chunks = temenos_official_chunks(query=query, top_k=max(2, top_k // 2))
         chunks = temenos_chunks + chunks
+
+    chunks = _filter_context_mismatch(chunks, context, query)
 
     # Light re-rank: nudge chunks whose family matches.
     if proposal_family:
