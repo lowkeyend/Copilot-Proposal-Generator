@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import re
 from typing import Any
+from uuid import uuid4
 
 from qdrant_client import QdrantClient, models
 
@@ -18,6 +20,42 @@ def _first(payload: dict[str, Any], keys: tuple[str, ...], default: str = "") ->
                 return " > ".join(str(item) for item in value)
             return str(value)
     return default
+
+
+def _chunk_text(text: str, chunk_size: int = 650, overlap: int = 120) -> list[str]:
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+    if not sentences:
+        return [text] if text.strip() else []
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for sentence in sentences:
+        if current and current_len + len(sentence) + 1 > chunk_size:
+            chunk = " ".join(current).strip()
+            if chunk:
+                chunks.append(chunk)
+            tail: list[str] = []
+            tail_len = 0
+            for prior in reversed(current):
+                if tail_len + len(prior) > overlap:
+                    break
+                tail.insert(0, prior)
+                tail_len += len(prior)
+            current = [*tail, sentence]
+            current_len = sum(len(part) for part in current)
+        else:
+            current.append(sentence)
+            current_len += len(sentence) + 1
+    final = " ".join(current).strip()
+    if final:
+        chunks.append(final)
+    return chunks
+
+
+def _summary(text: str) -> str:
+    words = text.split()
+    head = " ".join(words[:12])
+    return head if len(words) <= 12 else f"{head}..."
 
 
 def main() -> None:
@@ -83,13 +121,22 @@ def main() -> None:
             if not text:
                 skipped += 1
                 continue
-            batch.append(
-                models.PointStruct(
-                    id=point.id,
-                    vector=models.Document(text=text, model=args.model),
-                    payload=payload,
+            for index, chunk in enumerate(_chunk_text(text), start=1):
+                next_payload = {
+                    **payload,
+                    "text": chunk,
+                    "chunk_text": chunk,
+                    "chunk_summary": _summary(chunk),
+                    "parent_point_id": str(point.id),
+                    "rechunk_index": index,
+                }
+                batch.append(
+                    models.PointStruct(
+                        id=uuid4().hex,
+                        vector=models.Document(text=chunk, model=args.model),
+                        payload=next_payload,
+                    )
                 )
-            )
 
         if batch:
             client.upsert(collection_name=args.target, points=batch, wait=True)

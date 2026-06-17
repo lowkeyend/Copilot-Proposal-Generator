@@ -95,15 +95,19 @@ def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceC
 
 _SYSTEM = (
     "You are a senior bid writer producing polished, client-ready proposal "
-    "sections for enterprise technology engagements. Write in concise, "
+    "sections for enterprise technology engagements. Write in detailed, "
     "formal proposal prose with a consulting-bid tone. Use clean Markdown "
     "(short paragraphs, bullets, and pipe tables where useful), but avoid "
     "generic filler, self-referential language, and phrases like 'here's' or "
     "'this proposal outlines'. Ground every claim in the supplied evidence; "
     "do not use outside knowledge, memory, or ungrounded estimates. If a fact "
     "is not supported by the evidence, omit it or phrase it as a proposal "
-    "recommendation rather than a claim. Do not add a top-level document title "
-    "- only this section."
+    "recommendation rather than a claim. Never invent numeric values, dates, "
+    "durations, percentages, service levels, staffing counts, product claims, "
+    "or regulatory assertions. Do not add a top-level document title "
+    "- only this section. Produce submission-ready prose that preserves the "
+    "specificity, structure, and implementation detail found in the source "
+    "proposal corpus."
 )
 
 _TEMPLATE = """Write the proposal section titled: "{section_title}".
@@ -127,16 +131,29 @@ ORIGINAL REQUEST
 EVIDENCE FROM PRIOR PROPOSALS (reuse and adapt; cite nothing inline):
 {evidence}
 
+QUALITY CONTROLS
+- Detail profile: {detail_level}
+- Evidence-only mode: {require_evidence}
+- Official Temenos website evidence included: {include_temenos}
+
 Write the section now. The heading is added by the system, so begin directly
 with the body. Match a formal proposal style:
 - open with a crisp, substantive lead paragraph;
 - use section-specific subheadings only when they add clarity;
-- include at least one practical detail, phase, deliverable, or risk
-  implication where relevant;
+- include concrete phases, deliverables, assumptions, dependencies, governance
+  points, risk implications, and acceptance criteria where the evidence supports them;
+- preserve the source corpus level of specificity and avoid over-summarising;
+- if the evidence contains lists, scopes, phases, responsibilities, or module
+  names, carry them forward in proposal language;
+- for substantive delivery sections, write multiple developed paragraphs and
+  use bullets or tables only to add precision, not to shorten the answer;
+- do not invent numeric SLAs, timelines, team sizes, commercial values, or
+  percentages unless those exact details appear in the evidence;
 - avoid generic marketing language and vague claims.
 
-Aim for {length} of well-structured content. Do not condense the material;
-preserve the richness and detail expected in a real proposal.
+Target {length} of well-structured content. Treat the lower bound as the
+minimum acceptable depth unless the retrieved evidence is genuinely sparse.
+Do not condense the material.
 """
 
 
@@ -151,10 +168,62 @@ def _format_evidence(chunks: list[EvidenceChunk]) -> str:
         src = c.source_proposal or "unknown source"
         sec = f" / {c.source_section}" if c.source_section else ""
         snippet = (c.text or "").strip().replace("\n", " ")
-        if len(snippet) > 700:
-            snippet = snippet[:700] + "..."
-        lines.append(f"[{i}] ({src}{sec})\n{snippet}")
+        if len(snippet) > 1200:
+            snippet = snippet[:1200] + "..."
+        header = c.summary or sec.strip(" /") or src
+        lines.append(f"[{i}] {header} ({src}{sec}; {c.source_type})\n{snippet}")
     return "\n\n".join(lines)
+
+
+def _length_for(req: GenerateSectionRequest) -> str:
+    if req.instruction:
+        lowered = req.instruction.lower()
+        if any(w in lowered for w in ("short", "concise", "brief")):
+            return "350-650 words"
+        if any(w in lowered for w in ("longer", "expand", "detail")):
+            return "1200-1800 words"
+    if req.detail_level == "balanced":
+        return "800-1100 words"
+    if req.detail_level == "exhaustive":
+        return "1800-2600 words"
+    return "1200-1800 words"
+
+
+def _minimum_words(req: GenerateSectionRequest) -> int:
+    if req.instruction and any(
+        w in req.instruction.lower() for w in ("short", "concise", "brief")
+    ):
+        return 300
+    if req.detail_level == "balanced":
+        return 750
+    if req.detail_level == "exhaustive":
+        return 1400
+    return 1000
+
+
+def _evidence_enrichment(evidence: list[EvidenceChunk], needed_words: int) -> str:
+    if needed_words <= 0:
+        return ""
+    lines = [
+        "\n\n### Evidence-Grounded Delivery Detail\n\n"
+        "The following delivery considerations are drawn from the retrieved proposal corpus and should be treated as part of the section scope."
+    ]
+    added = 0
+    for chunk in evidence:
+        if added >= needed_words:
+            break
+        text = " ".join((chunk.text or "").split())
+        if not text:
+            continue
+        if len(text) > 420:
+            text = text[:420].rsplit(" ", 1)[0] + "."
+        source = chunk.summary or chunk.source_section or chunk.source_proposal or "Retrieved corpus evidence"
+        lines.append(
+            f"\n\n**{source}.** The proposal should account for {text[0].lower() + text[1:] if text else text} "
+            "This should be reflected as an actionable delivery consideration, with ownership, validation, and governance addressed during execution."
+        )
+        added += len(lines[-1].split())
+    return "".join(lines)
 
 
 async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
@@ -165,18 +234,25 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         context=req.context,
         proposal_family=req.proposal_family,
         top_k=req.top_k,
+        include_temenos_official=req.include_temenos_official,
+        use_hybrid_retrieval=req.use_hybrid_retrieval,
     )
 
     instruction_block = ""
-    length = "850-1200 words"
+    length = _length_for(req)
     if req.instruction:
         instruction_block = f"REVISION INSTRUCTION (follow precisely):\n{req.instruction}"
-        if any(w in req.instruction.lower() for w in ("short", "concise", "brief")):
-            length = "180-300 words"
-        elif any(w in req.instruction.lower() for w in ("longer", "expand", "detail")):
-            length = "900-1300 words"
-    else:
-        length = "850-1200 words"
+
+    if req.require_evidence and not evidence:
+        return SectionResult(
+            title=req.section_title,
+            content=(
+                "No proposal-corpus evidence was retrieved for this section. "
+                "Generation is paused because evidence-only mode is enabled."
+            ),
+            evidence=[],
+            model=get_llm().resolve_model(req.model),
+        )
 
     llm = get_llm()
     try:
@@ -200,13 +276,45 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
                         prompt=req.prompt or "—",
                         instruction_block=instruction_block,
                         evidence=_format_evidence(evidence),
+                        detail_level=req.detail_level,
+                        require_evidence="enabled" if req.require_evidence else "disabled",
+                        include_temenos="yes" if req.include_temenos_official else "no",
                         length=length,
                     ),
                 },
             ],
             model=req.model,
-            temperature=0.15,
+            temperature=0.08,
+            max_tokens=7000,
         )
+        if evidence and len(content.split()) < _minimum_words(req):
+            content = await llm.chat(
+                [
+                    {"role": "system", "content": _SYSTEM},
+                    {
+                        "role": "user",
+                        "content": (
+                            "Expand the draft below into a fuller, submission-ready "
+                            f"proposal section of at least {_minimum_words(req)} words. "
+                            "Keep the same section scope and do not introduce facts "
+                            "that are not supported by the evidence.\n\n"
+                            f"EVIDENCE:\n{_format_evidence(evidence)}\n\n"
+                            f"DRAFT:\n{content}"
+                        ),
+                    },
+                ],
+                model=req.model,
+                temperature=0.08,
+                max_tokens=7000,
+            )
+        if evidence and len(content.split()) < _minimum_words(req):
+            content = (
+                content.rstrip()
+                + _evidence_enrichment(
+                    evidence,
+                    needed_words=_minimum_words(req) - len(content.split()),
+                )
+            )
     except LLMError as exc:
         content = _local_section_content(req, evidence, length)
 

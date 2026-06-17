@@ -36,7 +36,7 @@ def _split_sentences(text: str) -> list[str]:
     return [part.strip() for part in parts if part.strip()]
 
 
-def _chunk_text(text: str, chunk_size: int = 1200, overlap: int = 220) -> list[str]:
+def _chunk_text(text: str, chunk_size: int = 650, overlap: int = 120) -> list[str]:
     sentences = _split_sentences(text)
     if not sentences:
         return [text] if text else []
@@ -51,8 +51,14 @@ def _chunk_text(text: str, chunk_size: int = 1200, overlap: int = 220) -> list[s
             chunk = " ".join(current).strip()
             if chunk:
                 chunks.append(chunk)
-            tail = chunk[-overlap:] if overlap > 0 else ""
-            current = [tail, sentence] if tail else [sentence]
+            tail: list[str] = []
+            tail_len = 0
+            for prior in reversed(current):
+                if tail_len + len(prior) > overlap:
+                    break
+                tail.insert(0, prior)
+                tail_len += len(prior)
+            current = [*tail, sentence]
             current_len = sum(len(part) for part in current)
         else:
             current.append(sentence)

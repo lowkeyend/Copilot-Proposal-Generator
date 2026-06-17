@@ -222,6 +222,10 @@ async def generate_proposal(req: GenerateProposalRequest) -> GenerateProposalRes
             pattern_guidance=toc_item.description,
             model=req.model,
             top_k=req.top_k,
+            include_temenos_official=req.include_temenos_official,
+            use_hybrid_retrieval=req.use_hybrid_retrieval,
+            detail_level=req.detail_level,
+            require_evidence=req.require_evidence,
         )
         result = await run_section_writer(section_req)
         # Preserve the TOC id so the frontend can map sections <-> outline.

@@ -33,10 +33,12 @@ export interface TocSection {
 export interface EvidenceChunk {
   text: string;
   score: number;
+  summary: string;
   source_proposal: string;
   source_section: string;
   proposal_family: string;
   chunk_id: string;
+  source_type: string;
 }
 
 export interface SectionResult {
@@ -90,6 +92,14 @@ export interface KnowledgeBaseUploadResponse {
   chunks_written: number;
   collection: string;
   detail: string;
+}
+
+export interface ProposalQualitySettings {
+  include_temenos_official: boolean;
+  use_hybrid_retrieval: boolean;
+  require_evidence: boolean;
+  detail_level: "balanced" | "corpus" | "exhaustive";
+  top_k: number;
 }
 
 export interface VersionMeta {

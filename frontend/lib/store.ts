@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import type {
   ClientContext,
   ProposalTemplate,
+  ProposalQualitySettings,
   SectionResult,
   TocSection,
 } from "./types";
@@ -16,6 +17,7 @@ interface ProposalState {
   proposalFamily: string;
   familyRationale: string;
   template: ProposalTemplate | null;
+  quality: ProposalQualitySettings;
 
   // workspace
   toc: TocSection[];
@@ -29,6 +31,7 @@ interface ProposalState {
   setProposalFamily: (v: string) => void;
   setFamilyRationale: (v: string) => void;
   setTemplate: (t: ProposalTemplate | null) => void;
+  setQuality: (patch: Partial<ProposalQualitySettings>) => void;
 
   setToc: (toc: TocSection[]) => void;
   addTocSection: (title?: string) => void;
@@ -54,6 +57,14 @@ const emptyContext: ClientContext = {
   special_instructions: "",
 };
 
+const defaultQuality: ProposalQualitySettings = {
+  include_temenos_official: false,
+  use_hybrid_retrieval: true,
+  require_evidence: true,
+  detail_level: "corpus",
+  top_k: 10,
+};
+
 function move<T extends { id: string }>(arr: T[], id: string, dir: -1 | 1): T[] {
   const idx = arr.findIndex((x) => x.id === id);
   if (idx === -1) return arr;
@@ -73,6 +84,7 @@ export const useProposalStore = create<ProposalState>()(
       proposalFamily: "",
       familyRationale: "",
       template: null,
+      quality: { ...defaultQuality },
       toc: [],
       sections: [],
       proposalId: null,
@@ -84,6 +96,8 @@ export const useProposalStore = create<ProposalState>()(
       setProposalFamily: (v) => set({ proposalFamily: v }),
       setFamilyRationale: (v) => set({ familyRationale: v }),
       setTemplate: (t) => set({ template: t }),
+      setQuality: (patch) =>
+        set((s) => ({ quality: { ...s.quality, ...patch } })),
 
       setToc: (toc) => set({ toc }),
       addTocSection: (title = "New Section") =>

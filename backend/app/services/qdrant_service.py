@@ -192,6 +192,7 @@ class QdrantService:
             results.append(
                 EvidenceChunk(
                     text=_first(payload, _TEXT_KEYS),
+                    summary=_summary_from_payload(payload),
                     score=float(getattr(h, "score", 0.0) or 0.0),
                     source_proposal=_first(payload, _SOURCE_KEYS),
                     source_section=_first(payload, _SECTION_KEYS),
@@ -231,6 +232,7 @@ class QdrantService:
             results.append(
                 EvidenceChunk(
                     text=_first(payload, _TEXT_KEYS),
+                    summary=_summary_from_payload(payload),
                     score=float(getattr(h, "score", 0.0) or 0.0),
                     source_proposal=_first(payload, _SOURCE_KEYS),
                     source_section=_first(payload, _SECTION_KEYS),
@@ -259,7 +261,10 @@ class QdrantService:
                 )
                 if not points:
                     break
-                payloads.extend(p.payload or {} for p in points)
+                for p in points:
+                    payload = dict(p.payload or {})
+                    payload["_point_id"] = str(getattr(p, "id", ""))
+                    payloads.append(payload)
                 if offset is None:
                     break
         except Exception:

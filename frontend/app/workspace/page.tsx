@@ -12,6 +12,8 @@ import {
   FileText,
   Layers3,
   Database,
+  Globe2,
+  SlidersHorizontal,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useProposalStore } from "@/lib/store";
@@ -76,6 +78,11 @@ export default function WorkspacePage() {
       pattern_guidance: toc?.description || "",
       instruction,
       model: store.model,
+      top_k: store.quality.top_k,
+      include_temenos_official: store.quality.include_temenos_official,
+      use_hybrid_retrieval: store.quality.use_hybrid_retrieval,
+      detail_level: store.quality.detail_level,
+      require_evidence: store.quality.require_evidence,
     });
     res.id = tocId;
     if (existing?.locked) res.locked = true;
@@ -135,6 +142,11 @@ export default function WorkspacePage() {
           proposal_family: store.proposalFamily,
           toc: store.toc,
           model: store.model,
+          top_k: store.quality.top_k,
+          include_temenos_official: store.quality.include_temenos_official,
+          use_hybrid_retrieval: store.quality.use_hybrid_retrieval,
+          detail_level: store.quality.detail_level,
+          require_evidence: store.quality.require_evidence,
         },
         generatedSections
       );
@@ -247,6 +259,94 @@ export default function WorkspacePage() {
                 <Badge tone="muted">{store.toc.length}</Badge>
               </div>
               <TocEditor />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="space-y-3 pt-5">
+              <div className="flex items-center justify-between">
+                <h2 className="flex items-center gap-2 text-sm font-semibold">
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Proposal Quality
+                </h2>
+                <Badge tone="muted">{store.quality.detail_level}</Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={store.quality.include_temenos_official ? "default" : "outline"}
+                  size="sm"
+                  onClick={() =>
+                    store.setQuality({
+                      include_temenos_official: !store.quality.include_temenos_official,
+                    })
+                  }
+                  title="Allow official Temenos website snippets in retrieval"
+                >
+                  <Globe2 className="h-4 w-4" />
+                  Temenos Web
+                </Button>
+                <Button
+                  type="button"
+                  variant={store.quality.use_hybrid_retrieval ? "default" : "outline"}
+                  size="sm"
+                  onClick={() =>
+                    store.setQuality({
+                      use_hybrid_retrieval: !store.quality.use_hybrid_retrieval,
+                    })
+                  }
+                  title="Combine vector retrieval with BM25 keyword matching"
+                >
+                  Hybrid RAG
+                </Button>
+                <Button
+                  type="button"
+                  variant={store.quality.require_evidence ? "default" : "outline"}
+                  size="sm"
+                  onClick={() =>
+                    store.setQuality({
+                      require_evidence: !store.quality.require_evidence,
+                    })
+                  }
+                  title="Pause generation when no evidence is retrieved"
+                >
+                  Evidence Only
+                </Button>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Sources
+                  </label>
+                  <input
+                    type="number"
+                    min={4}
+                    max={18}
+                    value={store.quality.top_k}
+                    onChange={(e) =>
+                      store.setQuality({
+                        top_k: Math.max(4, Math.min(18, Number(e.target.value) || 10)),
+                      })
+                    }
+                    className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Detail Profile
+                </label>
+                <Select
+                  value={store.quality.detail_level}
+                  onChange={(e) =>
+                    store.setQuality({
+                      detail_level: e.target.value as "balanced" | "corpus" | "exhaustive",
+                    })
+                  }
+                >
+                  <option value="balanced">Balanced</option>
+                  <option value="corpus">Match Corpus</option>
+                  <option value="exhaustive">Exhaustive</option>
+                </Select>
+              </div>
             </CardContent>
           </Card>
 

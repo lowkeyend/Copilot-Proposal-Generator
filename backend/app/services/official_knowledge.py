@@ -20,6 +20,8 @@ _OFFICIAL_FACTS: list[EvidenceChunk] = [
         source_section="Home",
         proposal_family="Temenos",
         score=0.0,
+        summary="Temenos official website - Home",
+        source_type="temenos_official",
         text=(
             "Temenos presents itself as a cloud-native and AI-driven banking "
             "software leader, serving a large global base of banks across core, "
@@ -32,6 +34,8 @@ _OFFICIAL_FACTS: list[EvidenceChunk] = [
         source_section="Core Banking",
         proposal_family="Temenos",
         score=0.0,
+        summary="Temenos official website - Core Banking",
+        source_type="temenos_official",
         text=(
             "Temenos Core Banking is modular and scalable. The official product "
             "pages describe long-running core functionality, cloud-native "
@@ -45,6 +49,8 @@ _OFFICIAL_FACTS: list[EvidenceChunk] = [
         source_section="Banking Platform",
         proposal_family="Temenos",
         score=0.0,
+        summary="Temenos official website - Banking Platform",
+        source_type="temenos_official",
         text=(
             "The Temenos Banking Platform is positioned as a modern foundation "
             "for banks that want to reduce modernization risk while moving "
@@ -57,6 +63,8 @@ _OFFICIAL_FACTS: list[EvidenceChunk] = [
         source_section="Cloud",
         proposal_family="Temenos",
         score=0.0,
+        summary="Temenos official website - Cloud",
+        source_type="temenos_official",
         text=(
             "Temenos highlights cloud-native, cloud-agnostic deployment and "
             "emphasizes scalability, efficiency, and support for SaaS delivery."
@@ -68,6 +76,8 @@ _OFFICIAL_FACTS: list[EvidenceChunk] = [
         source_section="Digital Banking",
         proposal_family="Temenos",
         score=0.0,
+        summary="Temenos official website - Digital Banking",
+        source_type="temenos_official",
         text=(
             "Temenos Digital Banking is described as a cloud-native platform "
             "for delivering AI-powered financial services and faster digital "
@@ -80,6 +90,8 @@ _OFFICIAL_FACTS: list[EvidenceChunk] = [
         source_section="Products",
         proposal_family="Temenos",
         score=0.0,
+        summary="Temenos official website - Products",
+        source_type="temenos_official",
         text=(
             "Temenos says its products span core, digital, AI, risk, data, "
             "pricing, compliance, and wealth, delivered through an end-to-end "
@@ -92,6 +104,8 @@ _OFFICIAL_FACTS: list[EvidenceChunk] = [
         source_section="Temenos Transact",
         proposal_family="Temenos",
         score=0.0,
+        summary="Temenos official website - Temenos Transact",
+        source_type="temenos_official",
         text=(
             "Temenos Transact is presented as the market-leading core banking "
             "solution, with broad functional coverage across retail, corporate, "

@@ -142,6 +142,10 @@ export const api = {
     instruction?: string;
     model?: string;
     top_k?: number;
+    include_temenos_official?: boolean;
+    use_hybrid_retrieval?: boolean;
+    detail_level?: "balanced" | "corpus" | "exhaustive";
+    require_evidence?: boolean;
   }) =>
     jsonFetch<SectionResult>("/generate-section", {
       method: "POST",
@@ -155,6 +159,11 @@ export const api = {
       proposal_family: string;
       toc: TocSection[];
       model?: string;
+      top_k?: number;
+      include_temenos_official?: boolean;
+      use_hybrid_retrieval?: boolean;
+      detail_level?: "balanced" | "corpus" | "exhaustive";
+      require_evidence?: boolean;
     },
     sections: SectionResult[]
   ) =>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Sparkles, FileText, ArrowRight, Wand2, Database, Upload } from "lucide-react";
+import { Sparkles, FileText, ArrowRight, Wand2, Database, Upload, Globe2, SlidersHorizontal } from "lucide-react";
 import { api } from "@/lib/api";
 import { useProposalStore } from "@/lib/store";
 import { Card, CardContent } from "@/components/ui/card";
@@ -222,6 +222,70 @@ export default function SetupPage() {
                   store.setContext({ special_instructions: e.target.value })
                 }
               />
+            </div>
+
+            <div className="rounded-md border border-border bg-muted/30 p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="flex items-center gap-2 text-sm font-semibold">
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Proposal Quality
+                </h2>
+                <span className="text-xs text-muted-foreground">
+                  {store.quality.detail_level}
+                </span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-4">
+                <Button
+                  type="button"
+                  variant={store.quality.include_temenos_official ? "default" : "outline"}
+                  size="sm"
+                  onClick={() =>
+                    store.setQuality({
+                      include_temenos_official: !store.quality.include_temenos_official,
+                    })
+                  }
+                  title="Allow official Temenos website snippets in retrieval"
+                >
+                  <Globe2 className="h-4 w-4" />
+                  Temenos Web
+                </Button>
+                <Button
+                  type="button"
+                  variant={store.quality.use_hybrid_retrieval ? "default" : "outline"}
+                  size="sm"
+                  onClick={() =>
+                    store.setQuality({
+                      use_hybrid_retrieval: !store.quality.use_hybrid_retrieval,
+                    })
+                  }
+                >
+                  Hybrid RAG
+                </Button>
+                <Button
+                  type="button"
+                  variant={store.quality.require_evidence ? "default" : "outline"}
+                  size="sm"
+                  onClick={() =>
+                    store.setQuality({
+                      require_evidence: !store.quality.require_evidence,
+                    })
+                  }
+                >
+                  Evidence Only
+                </Button>
+                <Select
+                  value={store.quality.detail_level}
+                  onChange={(e) =>
+                    store.setQuality({
+                      detail_level: e.target.value as "balanced" | "corpus" | "exhaustive",
+                    })
+                  }
+                >
+                  <option value="balanced">Balanced</option>
+                  <option value="corpus">Match Corpus</option>
+                  <option value="exhaustive">Exhaustive</option>
+                </Select>
+              </div>
             </div>
 
             {error && (

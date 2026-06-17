@@ -111,10 +111,12 @@ class BuildTocResponse(BaseModel):
 class EvidenceChunk(BaseModel):
     text: str
     score: float
+    summary: str = ""
     source_proposal: str = ""
     source_section: str = ""
     proposal_family: str = ""
     chunk_id: str = ""
+    source_type: str = "document"
 
 
 class KnowledgeBaseChunk(BaseModel):
@@ -149,6 +151,10 @@ class GenerateSectionRequest(BaseModel):
     instruction: str = ""
     model: Optional[str] = None
     top_k: int = 6
+    include_temenos_official: bool = False
+    use_hybrid_retrieval: bool = True
+    detail_level: Literal["balanced", "corpus", "exhaustive"] = "corpus"
+    require_evidence: bool = True
 
 
 class SectionResult(BaseModel):
@@ -168,6 +174,10 @@ class GenerateProposalRequest(BaseModel):
     toc: list[TocSection]
     model: Optional[str] = None
     top_k: int = 6
+    include_temenos_official: bool = False
+    use_hybrid_retrieval: bool = True
+    detail_level: Literal["balanced", "corpus", "exhaustive"] = "corpus"
+    require_evidence: bool = True
 
 
 class GenerateProposalResponse(BaseModel):
