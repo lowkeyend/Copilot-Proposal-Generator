@@ -13,11 +13,10 @@ import type {
 } from "./types";
 
 const CLOUD_BASE = "https://fawadsidd17-proposal-copilot-backend.hf.space";
-const rawBase = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "";
 const isVercelHost =
   typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app");
 
-const BASE = isVercelHost ? CLOUD_BASE : rawBase || "http://localhost:8000";
+const BASE = isVercelHost ? CLOUD_BASE : "http://localhost:8000";
 
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
