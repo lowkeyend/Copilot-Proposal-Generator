@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Database, Pencil, RefreshCw, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, Database, Pencil, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import type { KnowledgeBaseChunk } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -17,14 +17,22 @@ export default function KnowledgeBasePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string>("");
   const [draft, setDraft] = useState<KnowledgeBaseChunk | null>(null);
+  const [view, setView] = useState<"browse" | "upload">("browse");
+  const [files, setFiles] = useState<File[]>([]);
+  const [sourceProposal, setSourceProposal] = useState("");
+  const [sourceSection, setSourceSection] = useState("");
+  const [proposalFamily, setProposalFamily] = useState("Uploaded Knowledge");
 
   async function load() {
     setLoading(true);
     setError("");
+    setNotice("");
     try {
       const res = await api.listKnowledgeChunks(500);
       setChunks(res.chunks);
@@ -42,11 +50,18 @@ export default function KnowledgeBasePage() {
     load();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "upload") setView("upload");
+  }, []);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return chunks;
     return chunks.filter((c) =>
       [
+        c.summary,
         c.text,
         c.source_proposal,
         c.source_section,
@@ -111,6 +126,36 @@ export default function KnowledgeBasePage() {
     }
   }
 
+  async function uploadFiles() {
+    if (files.length === 0) {
+      setError("Choose at least one file to upload.");
+      return;
+    }
+    setUploading(true);
+    setError("");
+    setNotice("");
+    try {
+      const res = await api.uploadKnowledgeFiles(files, {
+        source_proposal: sourceProposal,
+        source_section: sourceSection,
+        proposal_family: proposalFamily,
+      });
+      setNotice(
+        `Uploaded ${res.files.length} file(s) and wrote ${res.chunks_written} chunks to ${res.collection}.`
+      );
+      setFiles([]);
+      setSourceProposal("");
+      setSourceSection("");
+      setProposalFamily("Uploaded Knowledge");
+      await load();
+      setView("browse");
+    } catch (e: any) {
+      setError(e.message || "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -141,6 +186,93 @@ export default function KnowledgeBasePage() {
           {error}
         </p>
       )}
+
+      {notice && (
+        <p className="mb-4 rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700">
+          {notice}
+        </p>
+      )}
+
+      <div className="mb-4 flex items-center gap-2">
+        <Button
+          variant={view === "browse" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setView("browse")}
+        >
+          <Database className="h-4 w-4" />
+          Browse Chunks
+        </Button>
+        <Button
+          variant={view === "upload" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setView("upload")}
+        >
+          <Upload className="h-4 w-4" />
+          Add Documents
+        </Button>
+      </div>
+
+      {view === "upload" ? (
+        <Card>
+          <CardContent className="space-y-4 pt-5">
+            <div>
+              <h2 className="text-sm font-semibold">Upload Knowledge Files</h2>
+              <p className="text-xs text-muted-foreground">
+                Upload `.docx`, `.pdf`, `.txt`, or `.md` files. They will be chunked,
+                embedded in Qdrant Cloud, and immediately available to retrieval.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label>Source Proposal</Label>
+                <Input
+                  value={sourceProposal}
+                  onChange={(e) => setSourceProposal(e.target.value)}
+                  placeholder="Temenos delivery playbook"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Source Section</Label>
+                <Input
+                  value={sourceSection}
+                  onChange={(e) => setSourceSection(e.target.value)}
+                  placeholder="Implementation methodology"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Proposal Family</Label>
+                <Input
+                  value={proposalFamily}
+                  onChange={(e) => setProposalFamily(e.target.value)}
+                  placeholder="Uploaded Knowledge"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Files</Label>
+              <Input
+                type="file"
+                multiple
+                accept=".docx,.pdf,.txt,.md"
+                onChange={(e) => setFiles(Array.from(e.target.files || []))}
+              />
+              <p className="text-xs text-muted-foreground">
+                {files.length ? `${files.length} file(s) selected.` : "No files selected yet."}
+              </p>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Uploaded chunks are written into the live Qdrant Cloud collection.
+              </p>
+              <Button onClick={uploadFiles} disabled={uploading}>
+                {uploading ? <Spinner /> : <Upload className="h-4 w-4" />}
+                Upload to Knowledge Base
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
 
       <div className="mb-4 flex items-center gap-2">
         <div className="relative w-full max-w-xl">
@@ -181,7 +313,8 @@ export default function KnowledgeBasePage() {
                       }`}
                     >
                       <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <Badge tone="accent">{chunk.source_proposal || "Unknown source"}</Badge>
+                        <Badge tone="accent">{chunk.summary || "Untitled chunk"}</Badge>
+                        <Badge tone="muted">{chunk.source_proposal || "Unknown source"}</Badge>
                         {chunk.source_section && (
                           <Badge tone="muted">{chunk.source_section}</Badge>
                         )}
@@ -282,6 +415,8 @@ export default function KnowledgeBasePage() {
           </CardContent>
         </Card>
       </div>
+        </>
+      )}
     </main>
   );
 }

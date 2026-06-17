@@ -119,6 +119,7 @@ class EvidenceChunk(BaseModel):
 
 class KnowledgeBaseChunk(BaseModel):
     chunk_id: str
+    summary: str = ""
     text: str = ""
     source_proposal: str = ""
     source_section: str = ""
@@ -251,3 +252,10 @@ class GenericResponse(BaseModel):
     ok: bool = True
     detail: str = ""
     data: dict[str, Any] = Field(default_factory=dict)
+
+
+class KnowledgeBaseUploadResponse(BaseModel):
+    files: list[str] = Field(default_factory=list)
+    chunks_written: int = 0
+    collection: str = ""
+    detail: str = ""

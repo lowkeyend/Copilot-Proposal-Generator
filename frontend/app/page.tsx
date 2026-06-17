@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Sparkles, FileText, ArrowRight, Wand2 } from "lucide-react";
+import { Sparkles, FileText, ArrowRight, Wand2, Database, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import { useProposalStore } from "@/lib/store";
 import { Card, CardContent } from "@/components/ui/card";
@@ -102,7 +102,21 @@ export default function SetupPage() {
             </p>
           </div>
         </div>
-        <KbStatus />
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => router.push("/knowledge-base")}>
+            <Database className="h-4 w-4" />
+            Knowledge Base
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/knowledge-base?view=upload")}
+          >
+            <Upload className="h-4 w-4" />
+            Add Docs
+          </Button>
+          <KbStatus />
+        </div>
       </div>
 
       <motion.div

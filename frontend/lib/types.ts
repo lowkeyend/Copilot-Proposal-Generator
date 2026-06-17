@@ -69,6 +69,7 @@ export interface KnowledgeBaseStatus {
 
 export interface KnowledgeBaseChunk {
   chunk_id: string;
+  summary: string;
   text: string;
   source_proposal: string;
   source_section: string;
@@ -82,6 +83,13 @@ export interface KnowledgeBaseChunkUpdate {
   source_proposal?: string;
   source_section?: string;
   proposal_family?: string;
+}
+
+export interface KnowledgeBaseUploadResponse {
+  files: string[];
+  chunks_written: number;
+  collection: string;
+  detail: string;
 }
 
 export interface VersionMeta {

@@ -7,7 +7,7 @@ support the frontend (status, models, patterns, template CRUD, downloads).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
@@ -24,6 +24,7 @@ from app.models.schemas import (
     GenericResponse,
     KnowledgeBaseStatus,
     KnowledgeBaseChunk,
+    KnowledgeBaseUploadResponse,
     KnowledgeBaseChunkUpdate,
     ProposalRecord,
     ProposalTemplate,
@@ -44,6 +45,7 @@ from app.agents.template_agent import run_template_agent
 from app.agents.toc_agent import run_toc_agent
 
 from app.services.docx_service import get_composer
+from app.services.knowledge_ingest_service import get_knowledge_ingest
 from app.services.llm_service import get_llm
 from app.services.qdrant_service import get_qdrant
 from app.services.storage_service import get_storage
@@ -73,6 +75,30 @@ def models() -> dict:
 def list_chunks(limit: int = 200) -> dict:
     chunks = get_qdrant().list_chunks(limit=limit)
     return {"chunks": [c.model_dump() for c in chunks], "count": len(chunks)}
+
+
+@router.post("/knowledge-base/upload", response_model=KnowledgeBaseUploadResponse, tags=["knowledge-base"])
+async def upload_chunks(
+    files: list[UploadFile] = File(...),
+    source_proposal: str = Form(""),
+    source_section: str = Form(""),
+    proposal_family: str = Form("Uploaded Knowledge"),
+) -> KnowledgeBaseUploadResponse:
+    try:
+        filenames, count = await get_knowledge_ingest().ingest_files(
+            files=files,
+            source_proposal=source_proposal.strip(),
+            source_section=source_section.strip(),
+            proposal_family=proposal_family.strip(),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return KnowledgeBaseUploadResponse(
+        files=filenames,
+        chunks_written=count,
+        collection=settings.qdrant_collection,
+        detail="Uploaded files were chunked and written to the active Qdrant collection.",
+    )
 
 
 @router.patch("/knowledge-base/chunks/{chunk_id}", response_model=KnowledgeBaseChunk, tags=["knowledge-base"])

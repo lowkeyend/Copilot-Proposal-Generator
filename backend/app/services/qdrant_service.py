@@ -60,6 +60,18 @@ def _first(payload: dict[str, Any], keys: tuple[str, ...], default: str = "") ->
     return default
 
 
+def _summary_from_payload(payload: dict[str, Any]) -> str:
+    explicit = payload.get("chunk_summary") or payload.get("summary")
+    if explicit:
+        return str(explicit)
+    text = _first(payload, _TEXT_KEYS)
+    words = text.split()
+    if not words:
+        return "Untitled chunk"
+    head = " ".join(words[:12])
+    return head if len(words) <= 12 else f"{head}..."
+
+
 class QdrantService:
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -254,6 +266,29 @@ class QdrantService:
             return payloads
         return payloads
 
+    def build_point(self, chunk_id: str, text: str, payload: dict[str, Any]):
+        client = self._client_or_none()
+        if client is None:
+            raise RuntimeError("Qdrant client unavailable.")
+
+        from qdrant_client import models
+
+        if self.settings.embedding_provider.strip().lower() == "qdrant":
+            vector = models.Document(text=text, model=self.settings.embedding_model)
+        else:
+            vector = get_embedder().embed_query(text)
+        return models.PointStruct(id=chunk_id, vector=vector, payload=payload)
+
+    def upsert_points(self, points: list[Any]) -> None:
+        client = self._client_or_none()
+        if client is None:
+            raise RuntimeError("Qdrant client unavailable.")
+        client.upsert(
+            collection_name=self.settings.qdrant_collection,
+            points=points,
+            wait=True,
+        )
+
     @staticmethod
     def normalize_payload(payload: dict[str, Any]) -> dict[str, str]:
         """Return a normalized view used by pattern discovery."""
@@ -287,6 +322,7 @@ class QdrantService:
             chunks.append(
                 KnowledgeBaseChunk(
                     chunk_id=str(getattr(p, "id", "")),
+                    summary=_summary_from_payload(payload),
                     text=_first(payload, _TEXT_KEYS),
                     source_proposal=_first(payload, _SOURCE_KEYS),
                     source_section=_first(payload, _SECTION_KEYS),
@@ -317,6 +353,7 @@ class QdrantService:
         payload = p.payload or {}
         return KnowledgeBaseChunk(
             chunk_id=str(getattr(p, "id", "")),
+            summary=_summary_from_payload(payload),
             text=_first(payload, _TEXT_KEYS),
             source_proposal=_first(payload, _SOURCE_KEYS),
             source_section=_first(payload, _SECTION_KEYS),

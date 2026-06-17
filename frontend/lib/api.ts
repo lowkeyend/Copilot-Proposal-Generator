@@ -4,6 +4,7 @@ import type {
   KnowledgeBaseChunk,
   KnowledgeBaseChunkUpdate,
   KnowledgeBaseStatus,
+  KnowledgeBaseUploadResponse,
   ProposalTemplate,
   ReviewIssue,
   SectionResult,
@@ -15,9 +16,7 @@ const CLOUD_BASE = "https://fawadsidd17-proposal-copilot-backend.hf.space";
 const rawBase = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || "";
 
 const BASE = rawBase
-  ? rawBase.includes("backend-production-a3cd.up.railway.app")
-    ? CLOUD_BASE
-    : rawBase
+  ? rawBase
   : typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app")
     ? CLOUD_BASE
     : "http://localhost:8000";
@@ -26,6 +25,24 @@ async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body.detail || JSON.stringify(body);
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function uploadFetch<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    body: form,
   });
   if (!res.ok) {
     let detail = res.statusText;
@@ -52,6 +69,22 @@ export const api = {
     jsonFetch<{ chunks: KnowledgeBaseChunk[]; count: number }>(
       `/knowledge-base/chunks?limit=${limit}`
     ),
+
+  uploadKnowledgeFiles: (
+    files: File[],
+    body: {
+      source_proposal?: string;
+      source_section?: string;
+      proposal_family?: string;
+    }
+  ) => {
+    const form = new FormData();
+    for (const file of files) form.append("files", file);
+    if (body.source_proposal) form.append("source_proposal", body.source_proposal);
+    if (body.source_section) form.append("source_section", body.source_section);
+    if (body.proposal_family) form.append("proposal_family", body.proposal_family);
+    return uploadFetch<KnowledgeBaseUploadResponse>("/knowledge-base/upload", form);
+  },
 
   updateKnowledgeChunk: (chunkId: string, body: KnowledgeBaseChunkUpdate) =>
     jsonFetch<KnowledgeBaseChunk>(`/knowledge-base/chunks/${chunkId}`, {
