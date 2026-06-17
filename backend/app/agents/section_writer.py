@@ -9,6 +9,8 @@ free-form `instruction` (e.g. "make it shorter", "rewrite the timeline").
 
 from __future__ import annotations
 
+import re
+
 from app.agents.retrieval_agent import retrieve_for_section
 from app.models.schemas import (
     EvidenceChunk,
@@ -226,6 +228,15 @@ def _evidence_enrichment(evidence: list[EvidenceChunk], needed_words: int) -> st
     return "".join(lines)
 
 
+def _strip_leading_heading(content: str, section_title: str) -> str:
+    lines = content.strip().splitlines()
+    while lines and re.match(r"^\s{0,3}#{1,2}\s+", lines[0]):
+        lines = lines[1:]
+        while lines and not lines[0].strip():
+            lines = lines[1:]
+    return "\n".join(lines).strip()
+
+
 async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     # 1) Retrieve evidence (Agent 6).
     evidence = retrieve_for_section(
@@ -320,7 +331,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
 
     return SectionResult(
         title=req.section_title,
-        content=content.strip(),
+        content=_strip_leading_heading(content, req.section_title),
         evidence=evidence,
         model=get_llm().resolve_model(req.model),
     )
