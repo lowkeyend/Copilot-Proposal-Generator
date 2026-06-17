@@ -45,13 +45,13 @@ class Settings(BaseSettings):
     qdrant_url: str = Field(default="", alias="QDRANT_URL")
     qdrant_api_key: str = Field(default="", alias="QDRANT_API_KEY")
     qdrant_collection: str = Field(
-        default="proposal_knowledge_base", alias="QDRANT_COLLECTION"
+        default="proposal_knowledge_base_v3", alias="QDRANT_COLLECTION"
     )
 
     # ---- Embeddings ----
-    embedding_provider: str = Field(default="local", alias="EMBEDDING_PROVIDER")
+    embedding_provider: str = Field(default="qdrant", alias="EMBEDDING_PROVIDER")
     embedding_model: str = Field(
-        default="BAAI/bge-large-en-v1.5", alias="EMBEDDING_MODEL"
+        default="sentence-transformers/all-MiniLM-L6-v2", alias="EMBEDDING_MODEL"
     )
     embedding_api_key: str = Field(default="", alias="EMBEDDING_API_KEY")
     embedding_api_base_url: str = Field(
