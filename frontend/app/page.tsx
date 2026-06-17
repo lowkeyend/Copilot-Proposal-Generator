@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { Sparkles, FileText, ArrowRight, Wand2, Database, Upload, Globe2, SlidersHorizontal } from "lucide-react";
 import { api } from "@/lib/api";
 import { useProposalStore } from "@/lib/store";
+import type { ClientContext } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea, Label } from "@/components/ui/input";
@@ -19,9 +20,22 @@ const EXAMPLES = [
   "Managed cybersecurity services proposal for a mid-size healthcare provider. Emphasize 24/7 SOC and HIPAA compliance.",
 ];
 
+const EMPTY_SETUP_CONTEXT: ClientContext = {
+  client_name: "",
+  industry: "",
+  project_type: "",
+  client_profile: "established",
+  implementation_context: "",
+  canonical_product: "",
+  tone: "Formal",
+  special_instructions: "",
+};
+
 export default function SetupPage() {
   const router = useRouter();
   const store = useProposalStore();
+  const [prompt, setPrompt] = useState("");
+  const [context, setContext] = useState({ ...EMPTY_SETUP_CONTEXT });
   const [models, setModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState("");
@@ -39,7 +53,7 @@ export default function SetupPage() {
   }, []);
 
   async function handleGenerate() {
-    if (!store.prompt.trim()) {
+    if (!prompt.trim()) {
       setError("Please describe the proposal you want to generate.");
       return;
     }
@@ -48,22 +62,23 @@ export default function SetupPage() {
     try {
       setStage("Understanding request & detecting proposal type…");
       const ctx = await api.generateContext({
-        prompt: store.prompt,
+        prompt,
         model: store.model,
-        client_name: store.context.client_name || undefined,
-        industry: store.context.industry || undefined,
-        project_type: store.context.project_type || undefined,
-        client_profile: store.context.client_profile || "established",
-        implementation_context: store.context.implementation_context || undefined,
-        canonical_product: store.context.canonical_product || undefined,
+        client_name: context.client_name || undefined,
+        industry: context.industry || undefined,
+        project_type: context.project_type || undefined,
+        client_profile: context.client_profile || "established",
+        implementation_context: context.implementation_context || undefined,
+        canonical_product: context.canonical_product || undefined,
       });
+      store.setPrompt(prompt);
       store.setContext(ctx.context);
       store.setProposalFamily(ctx.proposal_family);
       store.setFamilyRationale(ctx.family_rationale);
 
       setStage("Suggesting a proposal pattern from your corpus…");
       const tpl = await api.suggestTemplate({
-        prompt: store.prompt,
+        prompt,
         context: ctx.context,
         proposal_family: ctx.proposal_family,
         model: store.model,
@@ -72,7 +87,7 @@ export default function SetupPage() {
 
       setStage("Building an editable table of contents…");
       const toc = await api.buildToc({
-        prompt: store.prompt,
+        prompt,
         context: ctx.context,
         proposal_family: ctx.proposal_family,
         template: tpl.suggested,
@@ -82,6 +97,8 @@ export default function SetupPage() {
       store.resetWorkspace();
       store.setToc(toc.toc);
 
+      setPrompt("");
+      setContext({ ...EMPTY_SETUP_CONTEXT });
       router.push("/workspace");
     } catch (e: any) {
       setError(e.message || "Something went wrong.");
@@ -134,9 +151,9 @@ export default function SetupPage() {
                 <Label>Client Name</Label>
                 <Input
                   placeholder="XYZ Bank"
-                  value={store.context.client_name}
+                  value={context.client_name}
                   onChange={(e) =>
-                    store.setContext({ client_name: e.target.value })
+                    setContext((current) => ({ ...current, client_name: e.target.value }))
                   }
                 />
               </div>
@@ -144,9 +161,9 @@ export default function SetupPage() {
                 <Label>Industry</Label>
                 <Input
                   placeholder="Banking"
-                  value={store.context.industry}
+                  value={context.industry}
                   onChange={(e) =>
-                    store.setContext({ industry: e.target.value })
+                    setContext((current) => ({ ...current, industry: e.target.value }))
                   }
                 />
               </div>
@@ -154,9 +171,9 @@ export default function SetupPage() {
                 <Label>Project Type</Label>
                 <Input
                   placeholder="Temenos implementation"
-                  value={store.context.project_type}
+                  value={context.project_type}
                   onChange={(e) =>
-                    store.setContext({ project_type: e.target.value })
+                    setContext((current) => ({ ...current, project_type: e.target.value }))
                   }
                 />
               </div>
@@ -166,11 +183,12 @@ export default function SetupPage() {
               <div className="space-y-1.5">
                 <Label>Client Profile</Label>
                 <Select
-                  value={store.context.client_profile || "established"}
+                  value={context.client_profile || "established"}
                   onChange={(e) =>
-                    store.setContext({
+                    setContext((current) => ({
+                      ...current,
                       client_profile: e.target.value as "established" | "greenfield" | "unknown",
-                    })
+                    }))
                   }
                 >
                   <option value="established">Established / modernization</option>
@@ -182,9 +200,9 @@ export default function SetupPage() {
                 <Label>Canonical Product</Label>
                 <Input
                   placeholder="Temenos Transact"
-                  value={store.context.canonical_product || "Temenos Transact"}
+                  value={context.canonical_product}
                   onChange={(e) =>
-                    store.setContext({ canonical_product: e.target.value })
+                    setContext((current) => ({ ...current, canonical_product: e.target.value }))
                   }
                 />
               </div>
@@ -192,12 +210,9 @@ export default function SetupPage() {
                 <Label>Implementation Context</Label>
                 <Input
                   placeholder="Modernization / migration for an existing institution"
-                  value={
-                    store.context.implementation_context ||
-                    "Modernization / migration for an existing institution"
-                  }
+                  value={context.implementation_context}
                   onChange={(e) =>
-                    store.setContext({ implementation_context: e.target.value })
+                    setContext((current) => ({ ...current, implementation_context: e.target.value }))
                   }
                 />
               </div>
@@ -208,14 +223,14 @@ export default function SetupPage() {
               <Textarea
                 rows={4}
                 placeholder="Describe the proposal in plain English…"
-                value={store.prompt}
-                onChange={(e) => store.setPrompt(e.target.value)}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
               />
               <div className="flex flex-wrap gap-2 pt-1">
                 {EXAMPLES.map((ex, i) => (
                   <button
                     key={i}
-                    onClick={() => store.setPrompt(ex)}
+                    onClick={() => setPrompt(ex)}
                     className="rounded-full border border-border bg-muted px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-border"
                   >
                     <Wand2 className="mr-1 inline h-3 w-3" />
@@ -242,8 +257,10 @@ export default function SetupPage() {
               <div className="space-y-1.5">
                 <Label>Tone</Label>
                 <Select
-                  value={store.context.tone}
-                  onChange={(e) => store.setContext({ tone: e.target.value })}
+                  value={context.tone}
+                  onChange={(e) =>
+                    setContext((current) => ({ ...current, tone: e.target.value }))
+                  }
                 >
                   {["Formal", "Confident", "Consultative", "Concise", "Persuasive"].map(
                     (t) => (
@@ -261,9 +278,12 @@ export default function SetupPage() {
               <Textarea
                 rows={2}
                 placeholder="Emphasize migration and security. Keep executive summary under one page."
-                value={store.context.special_instructions}
+                value={context.special_instructions}
                 onChange={(e) =>
-                  store.setContext({ special_instructions: e.target.value })
+                  setContext((current) => ({
+                    ...current,
+                    special_instructions: e.target.value,
+                  }))
                 }
               />
             </div>
