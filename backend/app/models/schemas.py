@@ -25,6 +25,32 @@ def _now() -> str:
 # --------------------------------------------------------------------------
 # Client context (Agent 1)
 # --------------------------------------------------------------------------
+class IntakeProfile(BaseModel):
+    launch_segments: list[str] = Field(default_factory=list)
+    phase_1_products: list[str] = Field(default_factory=list)
+    phase_2_products: list[str] = Field(default_factory=list)
+    regulatory_interfaces_phase_1: list[str] = Field(default_factory=list)
+    regulatory_interfaces_phase_2: list[str] = Field(default_factory=list)
+    channels_phase_1: list[str] = Field(default_factory=list)
+    channels_phase_2: list[str] = Field(default_factory=list)
+    middleware_platform: str = ""
+    reporting_platform: str = ""
+    database_platform: str = ""
+    hosting_model: str = ""
+    container_platform: str = ""
+    data_warehouse_platform: str = ""
+    implementation_methodology: str = "TIM"
+    delivery_model: str = "Phased MVP"
+    target_customers_year_1: str = ""
+    target_customers_year_2: str = ""
+    target_customers_year_3: str = ""
+    target_accounts_year_1: str = ""
+    target_accounts_year_2: str = ""
+    target_accounts_year_3: str = ""
+    launch_plan: str = ""
+    questionnaire_notes: str = ""
+
+
 class ClientContext(BaseModel):
     client_name: str = ""
     industry: str = ""
@@ -32,6 +58,7 @@ class ClientContext(BaseModel):
     client_profile: Literal["established", "greenfield", "unknown"] = "established"
     implementation_context: str = "Modernization / migration for an existing institution"
     canonical_product: str = "Temenos Transact"
+    intake: IntakeProfile = Field(default_factory=IntakeProfile)
     tone: str = "Formal"
     special_instructions: str = ""
 
@@ -46,6 +73,7 @@ class GenerateContextRequest(BaseModel):
     client_profile: Optional[Literal["established", "greenfield", "unknown"]] = None
     implementation_context: Optional[str] = None
     canonical_product: Optional[str] = None
+    intake: Optional[IntakeProfile] = None
 
 
 class GenerateContextResponse(BaseModel):

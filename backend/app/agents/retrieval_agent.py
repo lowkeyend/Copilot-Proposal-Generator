@@ -39,7 +39,7 @@ _TIM_TERMS = (
     "business process transformation",
     "business process alignment",
     "model bank",
-    "adopt not adapt"
+    "adopt not adapt",
 )
 
 
@@ -125,12 +125,8 @@ def _lexical_fallback(
         if keywords:
             keyword_hits = sum(1 for kw in keywords if kw and kw.lower() in haystack)
             score += float(keyword_hits) * 0.75
-        tim_hits = sum(
-            1 for term in _TIM_TERMS
-            if term in haystack
-         )
-        score += float(tim_hits)*1.5
-            
+        tim_hits = sum(1 for term in _TIM_TERMS if term in haystack)
+        score += float(tim_hits) * 1.5
 
         scored.append(
             (
@@ -205,6 +201,25 @@ def retrieve_for_section(
         " ".join(keywords or []),
         proposal_family,
         context.project_type,
+        context.implementation_context,
+        context.canonical_product,
+        " ".join(context.intake.launch_segments or []),
+        " ".join(context.intake.phase_1_products or []),
+        " ".join(context.intake.phase_2_products or []),
+        " ".join(context.intake.regulatory_interfaces_phase_1 or []),
+        " ".join(context.intake.regulatory_interfaces_phase_2 or []),
+        " ".join(context.intake.channels_phase_1 or []),
+        " ".join(context.intake.channels_phase_2 or []),
+        context.intake.middleware_platform,
+        context.intake.reporting_platform,
+        context.intake.database_platform,
+        context.intake.hosting_model,
+        context.intake.container_platform,
+        context.intake.data_warehouse_platform,
+        context.intake.implementation_methodology,
+        context.intake.delivery_model,
+        context.intake.launch_plan,
+        context.intake.questionnaire_notes,
     ]
     query = " ".join(p for p in query_parts if p).strip()
 

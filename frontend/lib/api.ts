@@ -1,6 +1,7 @@
 import type {
   ClientContext,
   EvidenceChunk,
+  IntakeProfile,
   KnowledgeBaseChunk,
   KnowledgeBaseChunkUpdate,
   KnowledgeBaseStatus,
@@ -104,6 +105,7 @@ export const api = {
     client_profile?: "established" | "greenfield" | "unknown";
     implementation_context?: string;
     canonical_product?: string;
+    intake?: IntakeProfile;
   }) =>
     jsonFetch<{
       context: ClientContext;

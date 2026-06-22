@@ -5,8 +5,35 @@ export interface ClientContext {
   client_profile: "established" | "greenfield" | "unknown";
   implementation_context: string;
   canonical_product: string;
+  intake: IntakeProfile;
   tone: string;
   special_instructions: string;
+}
+
+export interface IntakeProfile {
+  launch_segments: string[];
+  phase_1_products: string[];
+  phase_2_products: string[];
+  regulatory_interfaces_phase_1: string[];
+  regulatory_interfaces_phase_2: string[];
+  channels_phase_1: string[];
+  channels_phase_2: string[];
+  middleware_platform: string;
+  reporting_platform: string;
+  database_platform: string;
+  hosting_model: string;
+  container_platform: string;
+  data_warehouse_platform: string;
+  implementation_methodology: string;
+  delivery_model: string;
+  target_customers_year_1: string;
+  target_customers_year_2: string;
+  target_customers_year_3: string;
+  target_accounts_year_1: string;
+  target_accounts_year_2: string;
+  target_accounts_year_3: string;
+  launch_plan: string;
+  questionnaire_notes: string;
 }
 
 export interface TemplateSection {

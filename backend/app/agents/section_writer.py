@@ -27,6 +27,7 @@ def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceC
     product = req.context.canonical_product or "the proposed solution"
     family = req.proposal_family or "the proposal family"
     tone = req.context.tone or "Formal"
+    intake = _intake_summary(req.context)
 
     lead = (
         f"### {req.section_title}\n\n"
@@ -36,6 +37,8 @@ def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceC
         f"a {tone.lower()} tone and is grounded only in retrieved evidence and "
         f"official product context."
     )
+    if intake:
+        lead += f" Questionnaire context: {intake}."
 
     if req.instruction:
         lead += f" The current revision instruction is: {req.instruction.strip()}."
@@ -122,6 +125,7 @@ CLIENT CONTEXT
 - Current client profile: {client_profile}
 - Implementation context: {implementation_context}
 - Canonical product name: {canonical_product}
+- Questionnaire summary: {intake_summary}
 - Proposal family: {family}
 - Tone: {tone}
 - Special instructions: {special}
@@ -160,6 +164,8 @@ QUALITY CONTROLS
   and governance language.
 - Use "cloud-native architecture with deployment flexibility" when discussing
   cloud positioning unless the evidence explicitly requires another distinction.
+- Prefer TIM wording and phase-based rollout language when the questionnaire
+  indicates TIM, MVP, phased launch, or go-live milestones.
 
 Write the section now. The heading is added by the system, so begin directly
 with the body. Match a formal proposal style:
@@ -270,6 +276,48 @@ def _canonical_client_name(value: str) -> str:
     if lowered in {"alfalah", "alfalah bank", "alfalahbank", "bank alfalah bank", "alfalah bank limited"}:
         return "Bank Alfalah"
     return cleaned
+
+
+def _intake_summary(context) -> str:
+    intake = getattr(context, "intake", None)
+    if not intake:
+        return ""
+    parts: list[str] = []
+    if intake.launch_segments:
+        parts.append(f"segments: {', '.join(intake.launch_segments)}")
+    if intake.phase_1_products:
+        parts.append(f"phase 1 products: {', '.join(intake.phase_1_products)}")
+    if intake.phase_2_products:
+        parts.append(f"phase 2 products: {', '.join(intake.phase_2_products)}")
+    if intake.regulatory_interfaces_phase_1:
+        parts.append(f"phase 1 interfaces: {', '.join(intake.regulatory_interfaces_phase_1)}")
+    if intake.regulatory_interfaces_phase_2:
+        parts.append(f"phase 2 interfaces: {', '.join(intake.regulatory_interfaces_phase_2)}")
+    if intake.channels_phase_1:
+        parts.append(f"phase 1 channels: {', '.join(intake.channels_phase_1)}")
+    if intake.channels_phase_2:
+        parts.append(f"phase 2 channels: {', '.join(intake.channels_phase_2)}")
+    if intake.middleware_platform:
+        parts.append(f"middleware: {intake.middleware_platform}")
+    if intake.reporting_platform:
+        parts.append(f"reporting: {intake.reporting_platform}")
+    if intake.database_platform:
+        parts.append(f"database: {intake.database_platform}")
+    if intake.hosting_model:
+        parts.append(f"hosting: {intake.hosting_model}")
+    if intake.container_platform:
+        parts.append(f"container: {intake.container_platform}")
+    if intake.data_warehouse_platform:
+        parts.append(f"warehouse: {intake.data_warehouse_platform}")
+    if intake.implementation_methodology:
+        parts.append(f"methodology: {intake.implementation_methodology}")
+    if intake.delivery_model:
+        parts.append(f"delivery: {intake.delivery_model}")
+    if intake.launch_plan:
+        parts.append(f"launch plan: {intake.launch_plan}")
+    if intake.questionnaire_notes:
+        parts.append(f"notes: {intake.questionnaire_notes}")
+    return "; ".join(parts)
 
 
 def _is_established_context(req: GenerateSectionRequest) -> bool:
@@ -388,6 +436,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
                         or "Modernization / migration for an existing institution",
                         canonical_product=req.context.canonical_product
                         or "Temenos Transact",
+                        intake_summary=_intake_summary(req.context) or "none provided",
                         family=req.proposal_family or "—",
                         tone=req.context.tone or "Formal",
                         special=req.context.special_instructions or "none",

@@ -177,12 +177,12 @@ def discover_patterns(min_support_ratio: float = 0.34) -> list[ProposalTemplate]
 def load_registry() -> list[ProposalTemplate]:
     path = _registry_path()
     if not path.exists():
-        return discover_patterns()
+        return _merge_curated(discover_patterns())
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-        return [ProposalTemplate.model_validate(t) for t in raw.get("patterns", [])]
+        return _merge_curated([ProposalTemplate.model_validate(t) for t in raw.get("patterns", [])])
     except Exception:
-        return discover_patterns()
+        return _merge_curated(discover_patterns())
 
 
 def _save_registry(templates: list[ProposalTemplate]) -> None:
@@ -280,3 +280,83 @@ def _seed_patterns() -> list[ProposalTemplate]:
             )
         )
     return out
+
+
+def _curated_patterns() -> list[ProposalTemplate]:
+    return [
+        ProposalTemplate(
+            name="Temenos — greenfield MVP launch",
+            proposal_family="Temenos",
+            origin="discovered",
+            support=0,
+            sections=[
+                TemplateSection(title="Executive Summary", keywords=["summary", "objective"], description="State the launch intent and business outcome."),
+                TemplateSection(title="Client Objectives & Launch Scope", keywords=["segments", "mvp", "launch"], description="Capture the intended market segments and launch scope."),
+                TemplateSection(title="Product Scope by Phase", keywords=["products", "phase"], description="Break products into phase 1 and phase 2."),
+                TemplateSection(title="Integration & Interface Scope", keywords=["interfaces", "channels"], description="List regulatory, digital, and internal interfaces."),
+                TemplateSection(title="Architecture & Hosting", keywords=["cloud", "database", "container"], description="Describe target hosting and environment."),
+                TemplateSection(title="TIM Delivery Approach", keywords=["tim", "methodology"], description="Explain the TIM delivery phases and governance."),
+                TemplateSection(title="Testing, Cutover & Go-Live", keywords=["testing", "cutover"], description="Describe readiness, validation, and rollout."),
+                TemplateSection(title="Training & Handover", keywords=["training", "change"], description="Describe enablement and ownership transfer."),
+                TemplateSection(title="Timeline & Milestones", keywords=["timeline", "milestones"], description="Outline the MVP schedule."),
+            ],
+        ),
+        ProposalTemplate(
+            name="Temenos — established bank modernization",
+            proposal_family="Temenos",
+            origin="discovered",
+            support=0,
+            sections=[
+                TemplateSection(title="Executive Summary", keywords=["summary", "objective"], description="Frame the modernization case."),
+                TemplateSection(title="Current State & Objectives", keywords=["current state", "objectives"], description="Summarize the existing environment and goals."),
+                TemplateSection(title="Solution Scope & Product Coverage", keywords=["scope", "products"], description="Describe the target product set."),
+                TemplateSection(title="Data Migration & Validation", keywords=["migration", "validation"], description="Cover data, reconciliation, and cutover."),
+                TemplateSection(title="Security, Compliance & Controls", keywords=["security", "compliance"], description="Align controls to the migration plan."),
+                TemplateSection(title="Integration & Channels", keywords=["integration", "channels"], description="Cover existing and new channels."),
+                TemplateSection(title="TIM Delivery Approach", keywords=["tim", "methodology"], description="Explain process-led delivery and governance."),
+                TemplateSection(title="Testing, Cutover & Stabilization", keywords=["testing", "cutover"], description="Detail SIT, UAT, go-live, and hypercare."),
+                TemplateSection(title="Project Governance & Timeline", keywords=["governance", "timeline"], description="Set the cadence and milestones."),
+            ],
+        ),
+        ProposalTemplate(
+            name="Core Banking RFP response",
+            proposal_family="Core Banking",
+            origin="discovered",
+            support=0,
+            sections=[
+                TemplateSection(title="Executive Summary", keywords=["summary", "objective"], description="Restate the RFP ask."),
+                TemplateSection(title="Functional Scope", keywords=["functional", "scope"], description="Capture the functional requirements."),
+                TemplateSection(title="Technical Scope", keywords=["technical", "hosting", "database"], description="Capture infrastructure and technical requirements."),
+                TemplateSection(title="Integrations & Reporting", keywords=["integration", "reporting"], description="Map interfaces and reporting."),
+                TemplateSection(title="Implementation Methodology", keywords=["implementation", "tim"], description="Describe delivery approach."),
+                TemplateSection(title="Assumptions & Dependencies", keywords=["assumptions", "dependencies"], description="State scope assumptions clearly."),
+                TemplateSection(title="Evaluation & Compliance Notes", keywords=["evaluation", "compliance"], description="Align response to the RFP evaluation."),
+            ],
+        ),
+        ProposalTemplate(
+            name="Digital wallet / omnichannel banking",
+            proposal_family="Digital Wallet",
+            origin="discovered",
+            support=0,
+            sections=[
+                TemplateSection(title="Executive Summary", keywords=["summary", "objective"], description="Frame the wallet business case."),
+                TemplateSection(title="Wallet Scope & User Journeys", keywords=["wallet", "journeys"], description="Describe channels and end-user journeys."),
+                TemplateSection(title="API & Integration Layer", keywords=["api", "integration"], description="Cover the interface layer."),
+                TemplateSection(title="Core Services & Backend", keywords=["backend", "services"], description="Describe wallet services and core dependencies."),
+                TemplateSection(title="Security & Fraud Controls", keywords=["security", "fraud"], description="Explain protection and controls."),
+                TemplateSection(title="Testing & Go-Live", keywords=["testing", "go-live"], description="Explain test and rollout approach."),
+            ],
+        ),
+    ]
+
+
+def _merge_curated(patterns: list[ProposalTemplate]) -> list[ProposalTemplate]:
+    curated = _curated_patterns()
+    seen = {(t.name.lower(), t.proposal_family.lower()) for t in patterns}
+    merged = list(patterns)
+    for template in curated:
+        key = (template.name.lower(), template.proposal_family.lower())
+        if key not in seen:
+            merged.append(template)
+    merged.sort(key=lambda t: (t.support, t.proposal_family), reverse=True)
+    return merged

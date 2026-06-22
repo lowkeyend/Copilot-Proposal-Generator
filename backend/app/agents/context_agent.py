@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from app.models.schemas import ClientContext, GenerateContextRequest
+from app.models.schemas import ClientContext, GenerateContextRequest, IntakeProfile
 from app.services.llm_service import LLMError, get_llm
 
 _SYSTEM = (
@@ -74,6 +74,7 @@ async def run_context_agent(req: GenerateContextRequest) -> ClientContext:
         implementation_context=_clean(data.get("implementation_context"))
         or "Modernization / migration for an existing institution",
         canonical_product=_clean(data.get("canonical_product")) or "Temenos Transact",
+        intake=req.intake or IntakeProfile(),
         tone=_clean(data.get("tone")) or "Formal",
         special_instructions=_clean(data.get("special_instructions")),
     )
@@ -91,6 +92,8 @@ async def run_context_agent(req: GenerateContextRequest) -> ClientContext:
         ctx.implementation_context = req.implementation_context
     if req.canonical_product:
         ctx.canonical_product = req.canonical_product
+    if req.intake:
+        ctx.intake = req.intake
     if not ctx.canonical_product and "temenos" in (ctx.project_type or "").lower():
         ctx.canonical_product = "Temenos Transact"
     return ctx
