@@ -134,7 +134,29 @@ ORIGINAL REQUEST
 
 {instruction_block}
 
-EVIDENCE FROM PRIOR PROPOSALS (reuse and adapt; cite nothing inline):
+EVIDENCE SOURCES
+
+The evidence below is the ONLY factual source material that may be used.
+
+Source Priority:
+
+1. Official product/vendor documentation
+2. TIM methodology evidence
+3. Same proposal-family evidence
+4. General proposal evidence
+
+Rules:
+
+- Do not introduce facts not present in evidence.
+- Do not combine facts from unrelated clients.
+- Do not infer timelines.
+- Do not infer staffing.
+- Do not infer governance structures.
+- Do not infer performance metrics.
+- Do not infer migration durations.
+- If evidence is silent, omit the statement.
+
+Evidence:
 {evidence}
 
 QUALITY CONTROLS
