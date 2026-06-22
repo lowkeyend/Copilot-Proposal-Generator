@@ -31,6 +31,17 @@ _GREENFIELD_TERMS = (
     "mvp launch",
 )
 
+_TIM_TERMS = (
+    "tim",
+    "temenos implementation methodology",
+    "project preparation",
+    "business process review",
+    "business process transformation",
+    "business process alignment",
+    "model bank",
+    "adopt not adapt"
+)
+
 
 def _tokens(text: str) -> set[str]:
     return {t for t in re.findall(r"[a-z0-9]+", text.lower()) if len(t) > 2}
@@ -114,6 +125,12 @@ def _lexical_fallback(
         if keywords:
             keyword_hits = sum(1 for kw in keywords if kw and kw.lower() in haystack)
             score += float(keyword_hits) * 0.75
+        tim_hits = sum(
+            1 for term in _TIM_TERMS
+            if term in haystack
+         )
+        score += float(tim_hits)*1.5
+            
 
         scored.append(
             (
