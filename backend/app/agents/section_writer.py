@@ -509,7 +509,17 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
                     {
                         "role": "user",
                         "content": (
-                            "Expand the draft below into a fuller, submission-ready "
+                            ", Expand using ONLY the supplied evidence.
+
+Do not introduce:
+
+- new facts
+- new timelines
+- new governance models
+- new metrics
+- new assumptions
+
+Every additional statement must be traceable to evidence, submission-ready "
                             f"proposal section of at least {_minimum_words(req)} words. "
                             "Keep the same section scope and do not introduce facts "
                             "that are not supported by the evidence.\n\n"
