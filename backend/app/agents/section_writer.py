@@ -110,7 +110,7 @@ _SYSTEM = (
     "or regulatory assertions. Do not add a top-level document title "
     "- only this section. Produce submission-ready prose that preserves the "
     "specificity, structure, and implementation detail found in the source "
-    "proposal corpus."
+    "proposal corpus. If TIM methodology evidence is present, TIM becomes the governing implementation framework."
 )
 
 _TEMPLATE = """Write the proposal section titled: "{section_title}".
