@@ -110,7 +110,7 @@ _SYSTEM = (
     "or regulatory assertions. Do not add a top-level document title "
     "- only this section. Produce submission-ready prose that preserves the "
     "specificity, structure, and implementation detail found in the source "
-    "proposal corpus. If TIM methodology evidence is present, TIM becomes the governing implementation framework."
+    "proposal corpus."
 )
 
 _TEMPLATE = """Write the proposal section titled: "{section_title}".
@@ -134,29 +134,7 @@ ORIGINAL REQUEST
 
 {instruction_block}
 
-EVIDENCE SOURCES
-
-The evidence below is the ONLY factual source material that may be used.
-
-Source Priority:
-
-1. Official product/vendor documentation
-2. TIM methodology evidence
-3. Same proposal-family evidence
-4. General proposal evidence
-
-Rules:
-
-- Do not introduce facts not present in evidence.
-- Do not combine facts from unrelated clients.
-- Do not infer timelines.
-- Do not infer staffing.
-- Do not infer governance structures.
-- Do not infer performance metrics.
-- Do not infer migration durations.
-- If evidence is silent, omit the statement.
-
-Evidence:
+EVIDENCE FROM PRIOR PROPOSALS (reuse and adapt; cite nothing inline):
 {evidence}
 
 QUALITY CONTROLS
@@ -182,79 +160,6 @@ QUALITY CONTROLS
   and governance language.
 - Use "cloud-native architecture with deployment flexibility" when discussing
   cloud positioning unless the evidence explicitly requires another distinction.
-
-TIM METHODOLOGY CONTROL
-
-If evidence contains any of:
-
-- TIM
-- Temenos Implementation Methodology
-- Project Preparation
-- Business Process Review
-- Business Process Transformation
-- Business Process Alignment
-- Model Bank
-- Adopt Not Adapt
-
-Then:
-
-- TIM becomes the governing implementation framework.
-- Preserve TIM phase order.
-- Use TIM terminology.
-- Do not replace TIM phases with generic consulting phases.
-- Do not introduce waterfall, PMO, governance, sprint, agile, scrum, or steering committee structures unless explicitly supported by evidence.
-- Do not merge TIM phases into generic delivery stages.
-
-METHODOLOGY CONTROL
-
-If the retrieved evidence contains:
-- TIM
-- Temenos Implementation Methodology
-- Project Preparation
-- Business Process Review
-- Business Process Transformation
-- Business Process Alignment
-- Adopt Not Adapt
-- Model Bank
-
-Then treat TIM as the governing implementation methodology.
-
-Requirements:
-- Structure implementation narratives around TIM phases.
-- Prefer TIM terminology over generic consulting terminology.
-- Do not introduce alternative implementation frameworks unless explicitly supported by retrieved evidence.
-- Preserve TIM phase ordering.
-- Do not replace TIM stages with generic project phases.
-- If retrieved evidence conflicts, TIM evidence takes precedence.
-
-NUMERIC FACT VALIDATION
-
-Before generating:
-
-Every number must appear in evidence.
-
-Never generate:
-
-- percentages
-- timelines
-- durations
-- TPS values
-- team sizes
-- effort estimates
-- budgets
-- project lengths
-- defect rates
-- staffing counts
-- migration windows
-
-unless the exact value appears in evidence.
-
-If not present:
-
-use:
-"to be determined"
-"subject to discovery"
-"subject to detailed design"
 
 Write the section now. The heading is added by the system, so begin directly
 with the body. Match a formal proposal style:
@@ -509,17 +414,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
                     {
                         "role": "user",
                         "content": (
-                            ", Expand using ONLY the supplied evidence.
-
-Do not introduce:
-
-- new facts
-- new timelines
-- new governance models
-- new metrics
-- new assumptions
-
-Every additional statement must be traceable to evidence, submission-ready "
+                            "Expand the draft below into a fuller, submission-ready "
                             f"proposal section of at least {_minimum_words(req)} words. "
                             "Keep the same section scope and do not introduce facts "
                             "that are not supported by the evidence.\n\n"
@@ -549,4 +444,4 @@ Every additional statement must be traceable to evidence, submission-ready "
         content=_strip_leading_heading(content, req.section_title),
         evidence=evidence,
         model=get_llm().resolve_model(req.model),
-    )
+        )
