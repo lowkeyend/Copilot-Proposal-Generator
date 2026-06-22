@@ -227,6 +227,35 @@ Requirements:
 - Do not replace TIM stages with generic project phases.
 - If retrieved evidence conflicts, TIM evidence takes precedence.
 
+NUMERIC FACT VALIDATION
+
+Before generating:
+
+Every number must appear in evidence.
+
+Never generate:
+
+- percentages
+- timelines
+- durations
+- TPS values
+- team sizes
+- effort estimates
+- budgets
+- project lengths
+- defect rates
+- staffing counts
+- migration windows
+
+unless the exact value appears in evidence.
+
+If not present:
+
+use:
+"to be determined"
+"subject to discovery"
+"subject to detailed design"
+
 Write the section now. The heading is added by the system, so begin directly
 with the body. Match a formal proposal style:
 - open with a crisp, substantive lead paragraph;
