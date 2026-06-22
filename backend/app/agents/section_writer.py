@@ -161,6 +161,28 @@ QUALITY CONTROLS
 - Use "cloud-native architecture with deployment flexibility" when discussing
   cloud positioning unless the evidence explicitly requires another distinction.
 
+METHODOLOGY CONTROL
+
+If the retrieved evidence contains:
+- TIM
+- Temenos Implementation Methodology
+- Project Preparation
+- Business Process Review
+- Business Process Transformation
+- Business Process Alignment
+- Adopt Not Adapt
+- Model Bank
+
+Then treat TIM as the governing implementation methodology.
+
+Requirements:
+- Structure implementation narratives around TIM phases.
+- Prefer TIM terminology over generic consulting terminology.
+- Do not introduce alternative implementation frameworks unless explicitly supported by retrieved evidence.
+- Preserve TIM phase ordering.
+- Do not replace TIM stages with generic project phases.
+- If retrieved evidence conflicts, TIM evidence takes precedence.
+
 Write the section now. The heading is added by the system, so begin directly
 with the body. Match a formal proposal style:
 - open with a crisp, substantive lead paragraph;
