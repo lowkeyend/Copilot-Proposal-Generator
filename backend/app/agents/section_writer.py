@@ -603,7 +603,7 @@ def _remove_meta_language(content: str) -> str:
 def _rewrite_common_echoes(content: str) -> str:
     replacements = [
         (
-            r"\b\d+\s+\d+\s+Temenos Implementation Methodology\s+",
+            r"\d+\s+\d+\s+Temenos Implementation Methodology\s+",
             "",
         ),
         (
@@ -629,6 +629,7 @@ def _rewrite_common_echoes(content: str) -> str:
     ]
     for pattern, replacement in replacements:
         content = re.sub(pattern, replacement, content, flags=re.IGNORECASE)
+    content = re.sub(r"Temenos Implementation Methodology\s+", "", content, flags=re.IGNORECASE)
     content = re.sub(r"(?m)^\s*\d+\s+\d+\s+", "", content)
     return content
 
