@@ -825,10 +825,14 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
             content = fallback
         else:
             content = _local_section_content(req, evidence, length)
+    final_content = _strip_leading_heading(content, req.section_title)
+    if not _clean_phrase(final_content):
+        fallback = _local_section_content(req, evidence, length)
+        final_content = _strip_leading_heading(fallback, req.section_title)
     return SectionResult(
         title=req.section_title,
-        content=_strip_leading_heading(content, req.section_title),
+        content=final_content,
         evidence=evidence,
         model=get_llm().resolve_model(req.model),
-        )
+    )
 
