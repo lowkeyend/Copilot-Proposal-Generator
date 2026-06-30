@@ -57,7 +57,7 @@ from app.agents.toc_agent import run_toc_agent
 from app.services.document_query_service import answer_document_query
 from app.services.docx_service import get_composer
 from app.services.knowledge_ingest_service import get_knowledge_ingest
-from app.services.llm_service import get_llm
+from app.services.llm_service import LLMError, get_llm
 from app.services.qdrant_service import get_qdrant
 from app.services.planner_service import plan_next_steps
 from app.services.runtime_settings_service import (
@@ -270,13 +270,19 @@ async def build_toc(req: BuildTocRequest) -> BuildTocResponse:
 # --------------------------------------------------------------------------
 @router.post("/generate-section", response_model=SectionResult, tags=["agents"])
 async def generate_section(req: GenerateSectionRequest) -> SectionResult:
-    return await run_section_writer(req)
+    try:
+        return await run_section_writer(req)
+    except LLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.post("/regenerate-section", response_model=SectionResult, tags=["agents"])
 async def regenerate_section(req: GenerateSectionRequest) -> SectionResult:
     # Same machinery; the UI passes an `instruction` for targeted rewrites.
-    return await run_section_writer(req)
+    try:
+        return await run_section_writer(req)
+    except LLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 # --------------------------------------------------------------------------
@@ -318,7 +324,13 @@ async def generate_proposal(req: GenerateProposalRequest) -> GenerateProposalRes
             detail_level=req.detail_level,
             require_evidence=req.require_evidence,
         )
-        result = await run_section_writer(section_req)
+        try:
+            result = await run_section_writer(section_req)
+        except LLMError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Section '{toc_item.title}' failed: {exc}",
+            ) from exc
         # Preserve the TOC id so the frontend can map sections <-> outline.
         result.id = toc_item.id
         sections.append(result)

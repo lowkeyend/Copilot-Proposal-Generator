@@ -39,7 +39,13 @@ function canonicalProductLabel(values: string[]) {
 export default function WorkspacePage() {
   const router = useRouter();
   const store = useProposalStore();
-  const [models] = useState(["deepseek/deepseek-chat", "qwen/qwen3-32b"]);
+  const [models] = useState([
+    "openrouter/free",
+    "qwen/qwen3-next-80b-a3b-instruct:free",
+    "deepseek/deepseek-chat-v3.1:free",
+    "qwen/qwen3-32b",
+    "deepseek/deepseek-chat",
+  ]);
 
   const [busySection, setBusySection] = useState<string | null>(null);
   const [generatingAll, setGeneratingAll] = useState(false);

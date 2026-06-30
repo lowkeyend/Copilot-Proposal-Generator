@@ -437,7 +437,7 @@ class OpenRouterSettingsUpdate(BaseModel):
 class OpenRouterSettingsStatus(BaseModel):
     api_key_set: bool = False
     source: Literal["runtime", "env", "none"] = "none"
-    default_model: str = "deepseek/deepseek-chat"
+    default_model: str = "openrouter/free"
     models: list[str] = Field(default_factory=list)
 
 

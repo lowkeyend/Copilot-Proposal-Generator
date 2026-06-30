@@ -88,7 +88,7 @@ export default function SettingsPage() {
       setStatus({
         api_key_set: result.ok,
         source: result.source === "request" ? "runtime" : result.source,
-        default_model: result.model || "deepseek/deepseek-chat",
+        default_model: result.model || "openrouter/free",
         models: models.length ? models : [result.model].filter(Boolean),
       });
     } catch (err) {
@@ -123,7 +123,7 @@ export default function SettingsPage() {
   }
 
   const working = status?.api_key_set && !message.toLowerCase().includes("failed");
-  const fallbackLikely = status?.source === "none" || message.toLowerCase().includes("fallback");
+  const blocked = !working && (status?.source === "none" || message.length > 0 || error.length > 0);
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -137,9 +137,9 @@ export default function SettingsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge tone={working ? "success" : fallbackLikely ? "warning" : "muted"}>
-            {working ? <CheckCircle2 className="h-3 w-3" /> : fallbackLikely ? <AlertTriangle className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />}
-            {working ? "Live LLM ready" : fallbackLikely ? "Fallback likely" : "Not checked"}
+          <Badge tone={working ? "success" : blocked ? "warning" : "muted"}>
+            {working ? <CheckCircle2 className="h-3 w-3" /> : blocked ? <AlertTriangle className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />}
+            {working ? "Live LLM ready" : blocked ? "Generation blocked" : "Not checked"}
           </Badge>
           {status ? (
             <Badge tone="default">
@@ -230,12 +230,12 @@ export default function SettingsPage() {
               <p>
                 {working
                   ? "Yes. The saved key and selected model are valid, so proposal generation should use the live LLM path."
-                  : fallbackLikely
-                    ? "Fallback is likely. The app either has no usable key or the selected model/key check failed."
+                  : blocked
+                    ? "No. The app either has no usable key or the selected model/key check failed, so proposal generation is blocked."
                     : "Run a check to verify whether the current key and model will work."}
               </p>
               <p>
-                If the check fails, proposal generation will fall back to the local synthesis path instead of OpenRouter.
+                There is no local synthesis fallback for proposal generation. The key and selected model must work.
               </p>
             </div>
           </section>

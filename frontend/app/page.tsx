@@ -179,7 +179,15 @@ export default function SetupPage() {
         setModels(m.models);
         if (!m.models.includes(store.model)) store.setModel(m.default);
       })
-      .catch(() => setModels(["deepseek/deepseek-chat", "qwen/qwen3-32b"]));
+      .catch(() =>
+        setModels([
+          "openrouter/free",
+          "qwen/qwen3-next-80b-a3b-instruct:free",
+          "deepseek/deepseek-chat-v3.1:free",
+          "qwen/qwen3-32b",
+          "deepseek/deepseek-chat",
+        ])
+      );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -1,13 +1,15 @@
 """OpenRouter chat-completion client.
 
 A thin async wrapper around the OpenRouter REST API. The model is always
-selectable per-request (the UI passes it through); we fall back to the
-configured default otherwise. A small JSON-extraction helper is provided
-because the agents frequently ask the model for structured output.
+selectable per-request (the UI passes it through); the configured default is
+used only when the request leaves the model blank. A small JSON-extraction
+helper is provided because the agents frequently ask the model for structured
+output.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any, Optional
@@ -72,12 +74,33 @@ class LLMService:
 
         url = f"{self.settings.openrouter_base_url.rstrip('/')}/chat/completions"
         async with httpx.AsyncClient(timeout=120.0) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-            if resp.status_code >= 400:
-                raise LLMError(
-                    f"OpenRouter error {resp.status_code}: {resp.text[:500]}"
-                )
-            data = resp.json()
+            last_error = ""
+            for attempt in range(3):
+                resp = await client.post(url, headers=headers, json=payload)
+                if resp.status_code == 429 and attempt < 2:
+                    retry_after = resp.headers.get("Retry-After", "").strip()
+                    delay = 0.0
+                    if retry_after.isdigit():
+                        delay = float(retry_after)
+                    else:
+                        try:
+                            body = resp.json()
+                            delay = float(
+                                body.get("error", {})
+                                .get("metadata", {})
+                                .get("retry_after_seconds", 0)
+                            )
+                        except Exception:
+                            delay = 0.0
+                    await asyncio.sleep(max(1.0, min(delay or 3.0, 20.0)))
+                    continue
+                if resp.status_code >= 400:
+                    last_error = f"OpenRouter error {resp.status_code}: {resp.text[:500]}"
+                    raise LLMError(last_error)
+                data = resp.json()
+                break
+            else:  # pragma: no cover
+                raise LLMError(last_error or "OpenRouter request failed after retries.")
         try:
             return data["choices"][0]["message"]["content"]
         except (KeyError, IndexError) as exc:  # pragma: no cover
@@ -94,7 +117,7 @@ class LLMService:
                 "ok": False,
                 "fallback": True,
                 "message": "No OpenRouter API key is configured.",
-                "detail": "Set a key in Settings or backend env.",
+                "detail": "Set a key in Settings or backend env. Proposal generation is blocked until the key works.",
             }
 
         model_id = self.resolve_model(model)
@@ -129,14 +152,14 @@ class LLMService:
             return {
                 "ok": True,
                 "fallback": False,
-                "message": "OpenRouter key and model are valid. Proposal generation should use the live LLM path.",
+                "message": "OpenRouter key and model are valid. Proposal generation will use the live LLM path.",
                 "detail": content.strip()[:100] or "Validated",
             }
         except Exception as exc:
             return {
                 "ok": False,
                 "fallback": True,
-                "message": "OpenRouter check failed. Proposal generation will likely fall back.",
+                "message": "OpenRouter check failed. Proposal generation is blocked until the key or model is fixed.",
                 "detail": str(exc)[:500],
             }
 

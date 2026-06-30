@@ -275,25 +275,25 @@ def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceC
 
     return "\n\n".join(paragraphs)
 _SYSTEM = (
-    "You are a senior bid writer producing polished, client-ready proposal "
-    "sections for enterprise technology engagements. Write in detailed, "
-    "formal proposal prose with a consulting-bid tone. Use clean Markdown "
-    "(short paragraphs, bullets, and pipe tables where useful), but avoid "
-    "generic filler, self-referential language, and phrases like 'here's' or "
-    "'this proposal outlines'. Ground every claim in the supplied evidence; "
-    "do not use outside knowledge, memory, or ungrounded estimates. If a fact "
-    "is not supported by the evidence, omit it or phrase it as a proposal "
-    "recommendation rather than a claim. Never invent numeric values, dates, "
-    "durations, percentages, service levels, staffing counts, product claims, "
-    "or regulatory assertions. Do not add a top-level document title "
-    "- only this section. Produce submission-ready prose that preserves the "
-    "specificity, structure, and implementation detail found in the source "
-    "proposal corpus. Do not mention source document names, chunk IDs, the "
-    "words 'source material', or any evidence labels in the final section "
-    "body. Write the section as if it were authored directly for the client."
+    "You are a senior proposal writer for enterprise banking transformation bids. "
+    "Write only final client-ready proposal prose. Do not explain your reasoning. "
+    "Do not describe what the section should do. Do not mention evidence, chunks, "
+    "retrieval, source documents, questionnaire context, or instructions. Ground "
+    "every factual statement in the supplied evidence and client context only. If "
+    "the evidence does not support a claim, omit it rather than inventing it. Use "
+    "formal submission-ready language, preserve implementation specificity from the "
+    "corpus, and write as if the text will be sent directly to the client."
 )
 
-_TEMPLATE = """Write the proposal section titled: "{section_title}".
+_REPAIR_SYSTEM = (
+    "You are an expert proposal editor. Rewrite flawed draft text into final "
+    "client-ready proposal prose. Remove commentary, instructional language, "
+    "evidence references, source references, and duplicated phrases. Preserve only "
+    "supported content from the evidence and client context. Return only the final "
+    "section body."
+)
+
+_TEMPLATE = """Write the proposal section titled "{section_title}".
 
 CLIENT CONTEXT
 - Client: {client}
@@ -347,8 +347,13 @@ QUALITY CONTROLS
 - Do not mention source document names, chunk IDs, or source commentary in
   the final section.
 
-Write the section now. The heading is added by the system, so begin directly
-with the body. Match a formal proposal style:
+Return the answer using exactly this format:
+<section>
+final section body only
+</section>
+
+The heading is added by the system, so do not include the section title inside
+the section body. Match a formal proposal style:
 - open with a crisp, substantive lead paragraph;
 - use section-specific subheadings only when they add clarity;
 - include concrete phases, deliverables, assumptions, dependencies, governance
@@ -370,10 +375,7 @@ Do not condense the material.
 
 def _format_evidence(chunks: list[EvidenceChunk]) -> str:
     if not chunks:
-        return (
-            "(No matching evidence retrieved. Write from best practice for this "
-            "family while staying generic about unverified client specifics.)"
-        )
+        return "(No matching evidence retrieved.)"
 
     section_keywords: list[str] = []
     for chunk in chunks:
@@ -388,13 +390,11 @@ def _format_evidence(chunks: list[EvidenceChunk]) -> str:
         if not key or key in seen:
             continue
         seen.add(key)
-        src = c.source_proposal or "unknown source"
-        sec = f" / {c.source_section}" if c.source_section else ""
-        header = _clean_phrase(c.summary or sec.strip(" /") or src)
+        header = _clean_phrase(c.summary or c.source_section or f"Evidence {i}")
         points = _extract_support_points(c, section_keywords, limit=2)
         if not points:
             continue
-        lines.append(f"[{i}] {header} ({src}{sec}; {c.source_type})\n- " + "\n- ".join(points))
+        lines.append(f"[EVIDENCE {i}] {header}\n- " + "\n- ".join(points))
     return "\n\n".join(lines)
 
 def _length_for(req: GenerateSectionRequest) -> str:
@@ -403,24 +403,24 @@ def _length_for(req: GenerateSectionRequest) -> str:
         if any(w in lowered for w in ("short", "concise", "brief")):
             return "350-650 words"
         if any(w in lowered for w in ("longer", "expand", "detail")):
-            return "1200-1800 words"
+            return "900-1300 words"
     if req.detail_level == "balanced":
-        return "800-1100 words"
+        return "450-700 words"
     if req.detail_level == "exhaustive":
-        return "1800-2600 words"
-    return "1200-1800 words"
+        return "1000-1400 words"
+    return "700-1000 words"
 
 
 def _minimum_words(req: GenerateSectionRequest) -> int:
     if req.instruction and any(
         w in req.instruction.lower() for w in ("short", "concise", "brief")
     ):
-        return 300
+        return 240
     if req.detail_level == "balanced":
-        return 750
+        return 320
     if req.detail_level == "exhaustive":
-        return 1400
-    return 1000
+        return 700
+    return 450
 
 
 def _evidence_enrichment(evidence: list[EvidenceChunk], needed_words: int) -> str:
@@ -702,10 +702,174 @@ def _looks_like_commentary(content: str) -> bool:
     return False
 
 
-def _rewrite_commentary_to_proposal(
-    req: GenerateSectionRequest, evidence: list[EvidenceChunk], content: str, length: str
+def _extract_section_block(text: str) -> str:
+    match = re.search(r"<section>(.*?)</section>", text, flags=re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return text.strip()
+
+
+def _clean_model_output(text: str, section_title: str) -> str:
+    cleaned = _extract_section_block(text)
+    cleaned = re.sub(r"```(?:markdown|md|text)?", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.replace("```", "").strip()
+    cleaned = _strip_leading_heading(cleaned, section_title)
+    lines = cleaned.splitlines()
+    if lines:
+        first = _clean_phrase(lines[0]).lower().rstrip(":")
+        title = _clean_phrase(section_title).lower().rstrip(":")
+        if first == title:
+            lines = lines[1:]
+    cleaned = "\n".join(lines).strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned
+
+
+def _validation_issues(
+    content: str, req: GenerateSectionRequest, evidence: list[EvidenceChunk]
+) -> list[str]:
+    issues: list[str] = []
+    text = _clean_phrase(content)
+    lowered = text.lower()
+    if not text:
+        issues.append("output is empty")
+        return issues
+    if _looks_like_commentary(text):
+        issues.append("output contains commentary or instruction-style language")
+    forbidden_terms = (
+        "source document",
+        "source material",
+        "retrieved evidence",
+        "questionnaire context",
+        "chunk ",
+        "the section should",
+        "the final wording should",
+        "write the section",
+    )
+    if any(term in lowered for term in forbidden_terms):
+        issues.append("output mentions evidence or prompt mechanics")
+    if len(text.split()) < max(180, _minimum_words(req) // 2):
+        issues.append("output is too short for a submission-ready section")
+    if req.context.client_profile != "greenfield" and "greenfield" in lowered:
+        issues.append("output applies greenfield language to a non-greenfield client context")
+    canonical_product = _clean_phrase(req.context.canonical_product or "")
+    if canonical_product:
+        aliases = (
+            "temenos core banking",
+            "temenos banking platform",
+        )
+        if any(alias in lowered for alias in aliases) and canonical_product.lower() not in lowered:
+            issues.append("output uses inconsistent product naming")
+    return issues
+
+
+def _should_expand(content: str, req: GenerateSectionRequest) -> bool:
+    return len(_clean_phrase(content).split()) < _minimum_words(req)
+
+
+async def _generate_via_llm(
+    llm,
+    req: GenerateSectionRequest,
+    evidence: list[EvidenceChunk],
+    length: str,
+    instruction_block: str,
 ) -> str:
-    return _local_section_content(req, evidence, length)
+    return await llm.chat(
+        [
+            {"role": "system", "content": _SYSTEM},
+            {
+                "role": "user",
+                "content": _TEMPLATE.format(
+                    section_title=req.section_title,
+                    client=req.context.client_name or "the client",
+                    industry=req.context.industry or "-",
+                    project=req.context.project_type or "-",
+                    client_profile=req.context.client_profile or "established",
+                    implementation_context=req.context.implementation_context
+                    or "Modernization / migration for an existing institution",
+                    canonical_product=req.context.canonical_product or "Temenos Transact",
+                    intake_summary=_intake_summary(req.context) or "none provided",
+                    family=req.proposal_family or "-",
+                    tone=req.context.tone or "Formal",
+                    special=req.context.special_instructions or "none",
+                    guidance=req.pattern_guidance or "Follow the family's standard structure.",
+                    prompt=req.prompt or "-",
+                    instruction_block=instruction_block,
+                    evidence=_format_evidence(evidence),
+                    detail_level=req.detail_level,
+                    require_evidence="enabled" if req.require_evidence else "disabled",
+                    include_temenos="yes" if req.include_temenos_official else "no",
+                    length=length,
+                ),
+            },
+        ],
+        model=req.model,
+        temperature=0.08,
+        max_tokens=1800,
+    )
+
+
+async def _repair_via_llm(
+    llm,
+    req: GenerateSectionRequest,
+    evidence: list[EvidenceChunk],
+    draft: str,
+    issues: list[str],
+) -> str:
+    issue_list = "\n".join(f"- {issue}" for issue in issues)
+    return await llm.chat(
+        [
+            {"role": "system", "content": _REPAIR_SYSTEM},
+            {
+                "role": "user",
+                "content": (
+                    f"SECTION TITLE: {req.section_title}\n"
+                    f"CLIENT: {req.context.client_name or 'the client'}\n"
+                    f"CANONICAL PRODUCT: {req.context.canonical_product or 'Temenos Transact'}\n"
+                    f"CLIENT PROFILE: {req.context.client_profile or 'established'}\n\n"
+                    "EVIDENCE\n"
+                    f"{_format_evidence(evidence)}\n\n"
+                    "DRAFT TO REWRITE\n"
+                    f"{draft}\n\n"
+                    "PROBLEMS TO FIX\n"
+                    f"{issue_list}\n\n"
+                    "Return only the corrected final section body inside <section> tags."
+                ),
+            },
+        ],
+        model=req.model,
+        temperature=0.05,
+        max_tokens=1800,
+    )
+
+
+async def _expand_via_llm(
+    llm,
+    req: GenerateSectionRequest,
+    evidence: list[EvidenceChunk],
+    draft: str,
+) -> str:
+    return await llm.chat(
+        [
+            {"role": "system", "content": _REPAIR_SYSTEM},
+            {
+                "role": "user",
+                "content": (
+                    f"Expand the following draft for the section '{req.section_title}' into a fuller, "
+                    "submission-ready proposal section. Keep the same factual grounding, but add more "
+                    "implementation depth, phase logic, governance detail, validation approach, risk "
+                    "controls, deliverables, and acceptance framing where the evidence supports them.\n\n"
+                    "Do not add commentary, source references, or reasoning. Return only the final "
+                    "section body inside <section> tags.\n\n"
+                    f"EVIDENCE\n{_format_evidence(evidence)}\n\n"
+                    f"DRAFT\n{draft}"
+                ),
+            },
+        ],
+        model=req.model,
+        temperature=0.05,
+        max_tokens=1800,
+    )
 
 
 async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
@@ -737,98 +901,52 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         )
 
     llm = get_llm()
-    try:
-        if not llm.available:
-            raise LLMError("OPENROUTER_API_KEY is not set.")
-        content = await llm.chat(
-            [
-                {"role": "system", "content": _SYSTEM},
-                {
-                    "role": "user",
-                    "content": _TEMPLATE.format(
-                        section_title=req.section_title,
-                        client=req.context.client_name or "the client",
-                        industry=req.context.industry or "-",
-                        project=req.context.project_type or "-",
-                        client_profile=req.context.client_profile or "established",
-                        implementation_context=req.context.implementation_context
-                        or "Modernization / migration for an existing institution",
-                        canonical_product=req.context.canonical_product
-                        or "Temenos Transact",
-                        intake_summary=_intake_summary(req.context) or "none provided",
-                        family=req.proposal_family or "-",
-                        tone=req.context.tone or "Formal",
-                        special=req.context.special_instructions or "none",
-                        guidance=req.pattern_guidance
-                        or "Follow the family's standard structure.",
-                        prompt=req.prompt or "-",
-                        instruction_block=instruction_block,
-                        evidence=_format_evidence(evidence),
-                        detail_level=req.detail_level,
-                        require_evidence="enabled" if req.require_evidence else "disabled",
-                        include_temenos="yes" if req.include_temenos_official else "no",
-                        length=length,
-                    ),
-                },
-            ],
-            model=req.model,
-            temperature=0.08,
-            max_tokens=7000,
-        )
-        if evidence and len(content.split()) < _minimum_words(req):
-            content = await llm.chat(
-                [
-                    {"role": "system", "content": _SYSTEM},
-                    {
-                        "role": "user",
-                        "content": (
-                            "Expand the draft below into a fuller, submission-ready "
-                            f"proposal section of at least {_minimum_words(req)} words. "
-                            "Keep the same section scope and do not introduce facts "
-                            "that are not supported by the evidence.\n\n"
-                            f"EVIDENCE:\n{_format_evidence(evidence)}\n\n"
-                            f"DRAFT:\n{content}"
-                        ),
-                    },
-                ],
-                model=req.model,
-                temperature=0.08,
-                max_tokens=7000,
-            )
-        if evidence and len(content.split()) < _minimum_words(req):
-            content = (
-                content.rstrip()
-                + _evidence_enrichment(
-                    evidence,
-                    needed_words=_minimum_words(req) - len(content.split()),
-                )
-            )
-    except LLMError as exc:
-        content = _local_section_content(req, evidence, length)
+    if not llm.available:
+        raise LLMError("OpenRouter is not configured. Section generation requires a working API key.")
 
+    raw_content = await _generate_via_llm(
+        llm=llm,
+        req=req,
+        evidence=evidence,
+        length=length,
+        instruction_block=instruction_block,
+    )
+    content = _clean_model_output(raw_content, req.section_title)
     content = _apply_context_guardrails(content, req)
-    content = _rewrite_common_echoes(content)
-    content = _remove_meta_language(content)
-    content = _remove_source_echoes(content)
-    if _looks_like_commentary(content):
-        content = _rewrite_commentary_to_proposal(req, evidence, content, length)
+    issues = _validation_issues(content, req, evidence)
+
+    if not issues and _should_expand(content, req):
+        raw_content = await _expand_via_llm(
+            llm=llm,
+            req=req,
+            evidence=evidence,
+            draft=content or raw_content,
+        )
+        content = _clean_model_output(raw_content, req.section_title)
         content = _apply_context_guardrails(content, req)
-        content = _rewrite_common_echoes(content)
-        content = _remove_meta_language(content)
-        content = _remove_source_echoes(content)
-    if len(_clean_phrase(content).split()) < 120:
-        fallback = _local_section_content(req, evidence, length)
-        fallback = _apply_context_guardrails(fallback, req)
-        fallback = _rewrite_common_echoes(fallback)
-        fallback = _remove_meta_language(fallback)
-        if len(_clean_phrase(fallback).split()) >= 40:
-            content = fallback
-        else:
-            content = _local_section_content(req, evidence, length)
+        issues = _validation_issues(content, req, evidence)
+
+    attempts = 0
+    while issues and attempts < 2:
+        raw_content = await _repair_via_llm(
+            llm=llm,
+            req=req,
+            evidence=evidence,
+            draft=content or raw_content,
+            issues=issues,
+        )
+        content = _clean_model_output(raw_content, req.section_title)
+        content = _apply_context_guardrails(content, req)
+        issues = _validation_issues(content, req, evidence)
+        attempts += 1
+
+    if issues:
+        raise LLMError(
+            "Section generation returned non-proposal output after validation: "
+            + "; ".join(issues)
+        )
+
     final_content = _strip_leading_heading(content, req.section_title)
-    if not _clean_phrase(final_content):
-        fallback = _local_section_content(req, evidence, length)
-        final_content = _strip_leading_heading(fallback, req.section_title)
     return SectionResult(
         title=req.section_title,
         content=final_content,

@@ -120,7 +120,7 @@ export const useProposalStore = create<ProposalState>()(
   persist(
     (set) => ({
       prompt: "",
-      model: "deepseek/deepseek-chat",
+      model: "openrouter/free",
       context: { ...emptyContext },
       proposalFamily: "",
       familyRationale: "",
@@ -184,7 +184,7 @@ export const useProposalStore = create<ProposalState>()(
       resetWorkspace: () =>
         set({
           prompt: "",
-          model: "deepseek/deepseek-chat",
+          model: "openrouter/free",
           context: { ...emptyContext },
           proposalFamily: "",
           familyRationale: "",

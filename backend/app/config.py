@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     openrouter_base_url: str = Field(
         default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL"
     )
-    default_model: str = Field(default="deepseek/deepseek-chat", alias="DEFAULT_MODEL")
+    default_model: str = Field(
+        default="openrouter/free",
+        alias="DEFAULT_MODEL",
+    )
     openrouter_app_url: str = Field(
         default="http://localhost:3000", alias="OPENROUTER_APP_URL"
     )
@@ -80,7 +83,13 @@ class Settings(BaseSettings):
     )
 
     # ---- Supported models exposed to the UI ----
-    supported_models: list[str] = ["qwen/qwen3-32b", "deepseek/deepseek-chat"]
+    supported_models: list[str] = [
+        "openrouter/free",
+        "qwen/qwen3-next-80b-a3b-instruct:free",
+        "deepseek/deepseek-chat-v3.1:free",
+        "qwen/qwen3-32b",
+        "deepseek/deepseek-chat",
+    ]
 
     # ---------- Derived helpers ----------
     def _resolve(self, value: str) -> Path:
