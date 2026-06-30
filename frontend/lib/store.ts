@@ -106,6 +106,8 @@ const defaultQuality: ProposalQualitySettings = {
   top_k: 10,
 };
 
+const defaultModel = "openrouter/free";
+
 function move<T extends { id: string }>(arr: T[], id: string, dir: -1 | 1): T[] {
   const idx = arr.findIndex((x) => x.id === id);
   if (idx === -1) return arr;
@@ -120,7 +122,7 @@ export const useProposalStore = create<ProposalState>()(
   persist(
     (set) => ({
       prompt: "",
-      model: "openrouter/free",
+      model: defaultModel,
       context: { ...emptyContext },
       proposalFamily: "",
       familyRationale: "",
@@ -184,7 +186,7 @@ export const useProposalStore = create<ProposalState>()(
       resetWorkspace: () =>
         set({
           prompt: "",
-          model: "openrouter/free",
+          model: defaultModel,
           context: { ...emptyContext },
           proposalFamily: "",
           familyRationale: "",
@@ -198,10 +200,15 @@ export const useProposalStore = create<ProposalState>()(
     }),
     {
       name: "proposal-copilot",
-      version: 3,
+      version: 4,
       migrate: (persisted: any) => {
         const context = persisted?.context ?? {};
         const intake = context?.intake ?? {};
+        const persistedModel = typeof persisted?.model === "string" ? persisted.model.trim() : "";
+        const normalizedModel =
+          !persistedModel || persistedModel === "deepseek/deepseek-chat"
+            ? defaultModel
+            : persistedModel;
         const canonicalProduct = context?.canonical_product;
         const normalizedCanonicalProduct = Array.isArray(canonicalProduct)
           ? canonicalProduct.filter((item: unknown) => typeof item === "string" && item.trim())
@@ -210,6 +217,7 @@ export const useProposalStore = create<ProposalState>()(
             : [...emptyContext.canonical_product];
         return {
           ...persisted,
+          model: normalizedModel,
           context: {
             ...emptyContext,
             ...context,
