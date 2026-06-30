@@ -85,7 +85,7 @@ def status() -> KnowledgeBaseStatus:
 def models() -> dict:
     return {
         "models": settings.supported_models,
-        "default": settings.default_model,
+        "default": settings.preferred_default_model,
         "llm_ready": get_llm().available,
     }
 
@@ -95,7 +95,7 @@ def get_llm_settings() -> OpenRouterSettingsStatus:
     return OpenRouterSettingsStatus(
         api_key_set=bool(get_openrouter_api_key()),
         source=get_openrouter_key_source(),
-        default_model=settings.default_model,
+        default_model=settings.preferred_default_model,
         models=settings.supported_models,
     )
 
@@ -106,7 +106,7 @@ def update_llm_settings(req: OpenRouterSettingsUpdate) -> OpenRouterSettingsStat
     return OpenRouterSettingsStatus(
         api_key_set=bool(get_openrouter_api_key()),
         source=get_openrouter_key_source(),
-        default_model=settings.default_model,
+        default_model=settings.preferred_default_model,
         models=settings.supported_models,
     )
 
@@ -118,7 +118,7 @@ async def check_llm_settings(req: OpenRouterSettingsUpdate) -> OpenRouterSetting
         ok=bool(result.get("ok")),
         fallback=bool(result.get("fallback", True)),
         source="request" if (req.api_key or "").strip() else get_openrouter_key_source(),
-        model=req.model or settings.default_model,
+        model=req.model or settings.preferred_default_model,
         message=str(result.get("message") or ""),
         detail=str(result.get("detail") or ""),
     )

@@ -43,7 +43,7 @@ class LLMService:
             return model
         if model:  # allow any model id the user typed, but default if blank
             return model
-        return self.settings.default_model
+        return self.settings.preferred_default_model
 
     async def chat(
         self,

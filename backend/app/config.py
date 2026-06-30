@@ -91,6 +91,17 @@ class Settings(BaseSettings):
         "deepseek/deepseek-chat",
     ]
 
+    @property
+    def preferred_default_model(self) -> str:
+        legacy_paid_defaults = {"deepseek/deepseek-chat", "qwen/qwen3-32b"}
+        if self.default_model in legacy_paid_defaults and "openrouter/free" in self.supported_models:
+            return "openrouter/free"
+        if self.default_model in self.supported_models:
+            return self.default_model
+        if self.supported_models:
+            return self.supported_models[0]
+        return self.default_model
+
     # ---------- Derived helpers ----------
     def _resolve(self, value: str) -> Path:
         """Resolve a possibly-relative path against the backend/ directory."""
