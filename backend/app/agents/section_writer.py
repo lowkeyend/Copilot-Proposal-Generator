@@ -816,6 +816,12 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         content = _rewrite_common_echoes(content)
         content = _remove_meta_language(content)
         content = _remove_source_echoes(content)
+    if len(_clean_phrase(content).split()) < 120:
+        content = _local_section_content(req, evidence, length)
+        content = _apply_context_guardrails(content, req)
+        content = _rewrite_common_echoes(content)
+        content = _remove_meta_language(content)
+        content = _remove_source_echoes(content)
     return SectionResult(
         title=req.section_title,
         content=_strip_leading_heading(content, req.section_title),
