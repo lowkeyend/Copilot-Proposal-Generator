@@ -629,7 +629,8 @@ def _rewrite_common_echoes(content: str) -> str:
     ]
     for pattern, replacement in replacements:
         content = re.sub(pattern, replacement, content, flags=re.IGNORECASE)
-    content = re.sub(r"Temenos Implementation Methodology\s+", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"\d[\d\s]*Temenos\s+Implementation\s+Methodology\s*", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"Temenos\s+Implementation\s+Methodology\s*", "", content, flags=re.IGNORECASE)
     content = re.sub(r"(?m)^\s*\d+\s+\d+\s+", "", content)
     return content
 
