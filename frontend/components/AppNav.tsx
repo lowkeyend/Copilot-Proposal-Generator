@@ -14,6 +14,7 @@ const LINKS = [
   { href: "/planner", label: "Planner" },
   { href: "/timeline", label: "Timeline Builder" },
   { href: "/workflow-maker", label: "Workflow Maker" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function AppNav() {

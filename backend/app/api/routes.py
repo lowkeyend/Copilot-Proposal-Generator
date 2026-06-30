@@ -28,6 +28,7 @@ from app.models.schemas import (
     InsightResponse,
     KnowledgeBaseStatus,
     OpenRouterSettingsStatus,
+    OpenRouterSettingsCheckResponse,
     OpenRouterSettingsUpdate,
     KnowledgeBaseChunk,
     KnowledgeBaseUploadResponse,
@@ -107,6 +108,19 @@ def update_llm_settings(req: OpenRouterSettingsUpdate) -> OpenRouterSettingsStat
         source=get_openrouter_key_source(),
         default_model=settings.default_model,
         models=settings.supported_models,
+    )
+
+
+@router.post("/settings/llm/check", response_model=OpenRouterSettingsCheckResponse, tags=["meta"])
+async def check_llm_settings(req: OpenRouterSettingsUpdate) -> OpenRouterSettingsCheckResponse:
+    result = await get_llm().check(model=req.model or None, api_key=req.api_key or None)
+    return OpenRouterSettingsCheckResponse(
+        ok=bool(result.get("ok")),
+        fallback=bool(result.get("fallback", True)),
+        source="request" if (req.api_key or "").strip() else get_openrouter_key_source(),
+        model=req.model or settings.default_model,
+        message=str(result.get("message") or ""),
+        detail=str(result.get("detail") or ""),
     )
 
 

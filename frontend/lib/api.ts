@@ -12,6 +12,7 @@ import type {
   ParsedField,
   OpenRouterSettingsStatus,
   OpenRouterSettingsUpdate,
+  OpenRouterSettingsCheckResponse,
   ProposalTemplate,
   PlannerResponse,
   RfpParseResponse,
@@ -27,9 +28,18 @@ const isVercelHost =
 
 const BASE = isVercelHost ? CLOUD_BASE : "http://localhost:8000";
 
+function getOpenRouterKey(): string {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem("proposal-copilot-openrouter-key") || "";
+}
+
 async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const openrouterKey = getOpenRouterKey();
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(openrouterKey ? { "X-OpenRouter-Api-Key": openrouterKey } : {}),
+    },
     ...init,
   });
   if (!res.ok) {
@@ -46,8 +56,10 @@ async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function uploadFetch<T>(path: string, form: FormData): Promise<T> {
+  const openrouterKey = getOpenRouterKey();
   const res = await fetch(`${BASE}${path}`, {
     method: "POST",
+    headers: openrouterKey ? { "X-OpenRouter-Api-Key": openrouterKey } : undefined,
     body: form,
   });
   if (!res.ok) {
@@ -76,6 +88,12 @@ export const api = {
 
   saveOpenRouterSettings: (body: OpenRouterSettingsUpdate) =>
     jsonFetch<OpenRouterSettingsStatus>("/settings/llm", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  checkOpenRouterSettings: (body: OpenRouterSettingsUpdate) =>
+    jsonFetch<OpenRouterSettingsCheckResponse>("/settings/llm/check", {
       method: "POST",
       body: JSON.stringify(body),
     }),

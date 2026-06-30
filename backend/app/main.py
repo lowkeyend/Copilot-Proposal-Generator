@@ -1,13 +1,14 @@
-"""Proposal Copilot — FastAPI application entrypoint."""
+"""Proposal Copilot - FastAPI application entrypoint."""
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.config import get_settings
 from app.api.routes import router
+from app.config import get_settings
+from app.services.runtime_settings_service import set_request_openrouter_api_key
 
 settings = get_settings()
 
@@ -25,6 +26,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def capture_openrouter_key(request: Request, call_next):
+    set_request_openrouter_api_key(request.headers.get("x-openrouter-api-key", ""))
+    try:
+        return await call_next(request)
+    finally:
+        set_request_openrouter_api_key("")
+
 
 app.include_router(router)
 

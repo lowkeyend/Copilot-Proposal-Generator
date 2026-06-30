@@ -141,14 +141,6 @@ export default function SetupPage() {
   const [prompt, setPrompt] = useState("");
   const [context, setContext] = useState({ ...EMPTY_SETUP_CONTEXT });
   const [models, setModels] = useState<string[]>([]);
-  const [llmStatus, setLlmStatus] = useState<{
-    api_key_set: boolean;
-    source: "runtime" | "env" | "none";
-    default_model: string;
-    models: string[];
-  } | null>(null);
-  const [openrouterKey, setOpenrouterKey] = useState("");
-  const [savingKey, setSavingKey] = useState(false);
   const [knowledgeDocuments, setKnowledgeDocuments] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState("");
@@ -188,27 +180,6 @@ export default function SetupPage() {
         if (!m.models.includes(store.model)) store.setModel(m.default);
       })
       .catch(() => setModels(["deepseek/deepseek-chat", "qwen/qwen3-32b"]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const cached =
-      typeof window !== "undefined" ? window.localStorage.getItem("proposal-copilot-openrouter-key") || "" : "";
-    if (cached) {
-      setOpenrouterKey(cached);
-    }
-    api
-      .getOpenRouterSettings()
-      .then((settings) => {
-        setLlmStatus(settings);
-        if (settings.models?.length) {
-          setModels((prev) => (prev.length ? prev : settings.models));
-          if (!settings.models.includes(store.model)) {
-            store.setModel(settings.default_model || settings.models[0]);
-          }
-        }
-      })
-      .catch(() => setLlmStatus(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -278,32 +249,6 @@ export default function SetupPage() {
       ...current,
       intake: { ...current.intake, ...patch },
     }));
-  }
-
-  async function handleSaveOpenRouterKey(nextValue?: string) {
-    setSavingKey(true);
-    setError("");
-    try {
-      const trimmed = (nextValue ?? openrouterKey).trim();
-      if (typeof window !== "undefined") {
-        if (trimmed) {
-          window.localStorage.setItem("proposal-copilot-openrouter-key", trimmed);
-        } else {
-          window.localStorage.removeItem("proposal-copilot-openrouter-key");
-        }
-      }
-      const updated = await api.saveOpenRouterSettings({ api_key: trimmed });
-      setLlmStatus(updated);
-      setModels((prev) => (prev.length ? prev : updated.models));
-      if (!updated.models.includes(store.model) && updated.default_model) {
-        store.setModel(updated.default_model);
-      }
-      setStage(trimmed ? `OpenRouter key saved using ${updated.source} settings.` : "OpenRouter key cleared.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save OpenRouter settings.");
-    } finally {
-      setSavingKey(false);
-    }
   }
 
   async function handleGenerate() {
@@ -862,48 +807,27 @@ export default function SetupPage() {
 
         <aside className="space-y-4">
           <section className="rounded-3xl border border-border bg-card p-5 shadow-sm">
-            <h2 className="mb-3 text-sm font-semibold">LLM Settings</h2>
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <Label>OpenRouter API Key</Label>
-                <Input
-                  type="password"
-                  value={openrouterKey}
-                  onChange={(e) => setOpenrouterKey(e.target.value)}
-                  placeholder="sk-or-v1-..."
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Saved to backend runtime settings and reused by proposal generation.
-                  {llmStatus ? ` Current source: ${llmStatus.source}.` : ""}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => void handleSaveOpenRouterKey()} disabled={savingKey}>
-                  {savingKey ? <Spinner /> : null}
-                  Save key
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setOpenrouterKey("");
-                    void handleSaveOpenRouterKey("");
-                  }}
-                  disabled={savingKey}
-                >
-                  Clear key
-                </Button>
-              </div>
-              <div className="pt-2">
-                <Label>Model</Label>
-                <Select value={store.model} onChange={(e) => store.setModel(e.target.value)}>
-                  {models.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </Select>
-              </div>
+            <h2 className="mb-2 text-sm font-semibold">LLM Settings</h2>
+            <p className="text-sm text-muted-foreground">
+              Manage the OpenRouter key from the dedicated Settings tab.
+            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => router.push("/settings")}>
+                Open Settings
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Key persistence and LLM checks live there.
+              </span>
+            </div>
+            <div className="mt-4">
+              <Label>Model</Label>
+              <Select value={store.model} onChange={(e) => store.setModel(e.target.value)}>
+                {models.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </Select>
             </div>
           </section>
 

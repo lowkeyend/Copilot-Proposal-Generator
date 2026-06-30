@@ -431,6 +431,7 @@ class KnowledgeBaseStatus(BaseModel):
 
 class OpenRouterSettingsUpdate(BaseModel):
     api_key: str = ""
+    model: str = ""
 
 
 class OpenRouterSettingsStatus(BaseModel):
@@ -438,6 +439,15 @@ class OpenRouterSettingsStatus(BaseModel):
     source: Literal["runtime", "env", "none"] = "none"
     default_model: str = "deepseek/deepseek-chat"
     models: list[str] = Field(default_factory=list)
+
+
+class OpenRouterSettingsCheckResponse(BaseModel):
+    ok: bool = False
+    fallback: bool = True
+    source: Literal["request", "runtime", "env", "none"] = "none"
+    model: str = ""
+    message: str = ""
+    detail: str = ""
 
 
 class GenericResponse(BaseModel):

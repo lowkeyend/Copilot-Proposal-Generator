@@ -119,6 +119,16 @@ export interface OpenRouterSettingsStatus {
 
 export interface OpenRouterSettingsUpdate {
   api_key: string;
+  model?: string;
+}
+
+export interface OpenRouterSettingsCheckResponse {
+  ok: boolean;
+  fallback: boolean;
+  source: "request" | "runtime" | "env" | "none";
+  model: string;
+  message: string;
+  detail: string;
 }
 
 export interface KnowledgeBaseChunk {

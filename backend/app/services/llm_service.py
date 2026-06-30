@@ -15,7 +15,10 @@ from typing import Any, Optional
 import httpx
 
 from app.config import get_settings
-from app.services.runtime_settings_service import get_openrouter_api_key
+from app.services.runtime_settings_service import (
+    get_openrouter_api_key,
+    get_openrouter_key_source,
+)
 
 
 class LLMError(RuntimeError):
@@ -29,6 +32,9 @@ class LLMService:
     @property
     def available(self) -> bool:
         return bool(get_openrouter_api_key())
+
+    def key_source(self) -> str:
+        return get_openrouter_key_source()
 
     def resolve_model(self, model: Optional[str]) -> str:
         if model and model in self.settings.supported_models:
@@ -76,6 +82,63 @@ class LLMService:
             return data["choices"][0]["message"]["content"]
         except (KeyError, IndexError) as exc:  # pragma: no cover
             raise LLMError(f"Unexpected OpenRouter response shape: {data}") from exc
+
+    async def check(
+        self,
+        model: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ) -> dict[str, str | bool]:
+        key = (api_key or get_openrouter_api_key()).strip()
+        if not key:
+            return {
+                "ok": False,
+                "fallback": True,
+                "message": "No OpenRouter API key is configured.",
+                "detail": "Set a key in Settings or backend env.",
+            }
+
+        model_id = self.resolve_model(model)
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": self.settings.openrouter_app_url,
+            "X-Title": self.settings.openrouter_app_name,
+        }
+        payload: dict[str, Any] = {
+            "model": model_id,
+            "messages": [
+                {"role": "system", "content": "Reply with OK."},
+                {"role": "user", "content": "OK"},
+            ],
+            "temperature": 0,
+            "max_tokens": 1,
+        }
+        url = f"{self.settings.openrouter_base_url.rstrip('/')}/chat/completions"
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(url, headers=headers, json=payload)
+                if resp.status_code >= 400:
+                    return {
+                        "ok": False,
+                        "fallback": True,
+                        "message": "OpenRouter rejected the configured key or model.",
+                        "detail": f"{resp.status_code}: {resp.text[:500]}",
+                    }
+                data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+            return {
+                "ok": True,
+                "fallback": False,
+                "message": "OpenRouter key and model are valid. Proposal generation should use the live LLM path.",
+                "detail": content.strip()[:100] or "Validated",
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "fallback": True,
+                "message": "OpenRouter check failed. Proposal generation will likely fall back.",
+                "detail": str(exc)[:500],
+            }
 
     async def chat_json(
         self,
