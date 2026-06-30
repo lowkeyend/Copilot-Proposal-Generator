@@ -635,6 +635,41 @@ def _rewrite_common_echoes(content: str) -> str:
     return content
 
 
+def _looks_like_commentary(content: str) -> bool:
+    text = _clean_phrase(content).lower()
+    if not text:
+        return True
+    signals = (
+        "questionnaire context:",
+        "the section should",
+        "the final wording should",
+        "should read like",
+        "write the section now",
+        "content was written from best practice",
+        "retrieved evidence for this section",
+        "evidence was retrieved for this section",
+        "this means the retrieval step",
+        "source commentary",
+        "source material",
+        "evidence labels",
+        "the retrieved evidence supports",
+        "revision request incorporated",
+        "edit",
+    )
+    score = sum(1 for signal in signals if signal in text)
+    if score >= 2:
+        return True
+    if text.startswith(("questionnaire context:", "the section should", "the final wording should")):
+        return True
+    return False
+
+
+def _rewrite_commentary_to_proposal(
+    req: GenerateSectionRequest, evidence: list[EvidenceChunk], content: str, length: str
+) -> str:
+    return _local_section_content(req, evidence, length)
+
+
 async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     # 1) Retrieve evidence (Agent 6).
     evidence = retrieve_for_section(
@@ -736,6 +771,11 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     content = _apply_context_guardrails(content, req)
     content = _rewrite_common_echoes(content)
     content = _remove_meta_language(content)
+    if _looks_like_commentary(content):
+        content = _rewrite_commentary_to_proposal(req, evidence, content, length)
+        content = _apply_context_guardrails(content, req)
+        content = _rewrite_common_echoes(content)
+        content = _remove_meta_language(content)
     return SectionResult(
         title=req.section_title,
         content=_strip_leading_heading(content, req.section_title),
