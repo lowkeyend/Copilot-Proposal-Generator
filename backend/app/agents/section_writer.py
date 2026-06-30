@@ -156,6 +156,39 @@ def _evidence_briefs(
     return briefs[:6]
 
 
+def _proposalize_fact(text: str) -> str:
+    lowered = _clean_phrase(text).lower()
+    if not lowered:
+        return ""
+    if "executive sponsorship" in lowered and "governance" in lowered and "partner model" in lowered:
+        return (
+            "Delivery will be anchored by executive sponsorship, a strong governance structure, "
+            "and a proven partner model that brings experience, capacity, and accelerators."
+        )
+    if "learning suite" in lowered or "change management" in lowered:
+        return (
+            "Temenos learning resources will support change management during and after the initial "
+            "renovation phase."
+        )
+    if "migration" in lowered and ("phased" in lowered or "big-bang" in lowered or "big bang" in lowered):
+        return (
+            "The migration will be executed in controlled phases, with the final cutover model "
+            "selected to match the agreed scope and risk profile."
+        )
+    if "pre-packaged tools" in lowered:
+        return (
+            "Temenos pre-packaged tools will be used to accelerate delivery and reduce manual effort "
+            "during migration."
+        )
+    if "full phased migration" in lowered:
+        return "The delivery model will use phased migration to manage scope and cutover risk."
+    if "co-existence" in lowered:
+        return "Co-existence will be used where legacy run-off or staged migration is required."
+    if "strong governance" in lowered:
+        return "A strong governance framework will control scope, risk, decisions, and delivery cadence."
+    return _sentence_case(text)
+
+
 def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceChunk], length: str) -> str:
     client = req.context.client_name or "the client"
     industry = req.context.industry or "the industry"
@@ -174,16 +207,17 @@ def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceC
             f"### {req.section_title}\n\n"
             f"{client} is seeking {project_phrase} proposal that aligns the selected "
             f"{product} solution with the business, delivery, and governance realities "
-            f"of {industry.lower()}. The narrative should present the case for change "
-            f"clearly, show how the proposal will be delivered in a controlled manner, "
-            f"and keep the tone {tone.lower()} and submission-ready."
+            f"of {industry.lower()}. The proposal positions the change as a controlled "
+            f"transformation program, with the operating model, delivery governance, and "
+            f"implementation path aligned to the selected methodology and delivery model."
         )
     elif any(term in title for term in ("solution", "approach", "strategy")):
         lead = (
             f"### {req.section_title}\n\n"
-            f"The proposed {product} solution should be described as a coherent response "
-            f"to {client}'s {project.lower()} objectives, with emphasis on how the chosen "
-            f"delivery approach and {family} structure support the target operating model."
+            f"The proposed {product} solution is structured as a coherent response to "
+            f"{client}'s {project.lower()} objectives. It combines executive sponsorship, "
+            f"strong governance, a proven partner model, and staged delivery so the target "
+            f"operating model can be achieved without disrupting business continuity."
         )
     else:
         lead = (
@@ -193,56 +227,50 @@ def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceC
             f"operating realities of {industry.lower()}."
         )
 
-    if intake:
-        lead += f" Questionnaire context: {intake}."
-    if req.instruction:
-        lead += f" The current revision instruction is: {req.instruction.strip()}."
-
     paragraphs: list[str] = [lead]
 
-    if briefs:
-        intro_lines: list[str] = []
-        for _label, _source, points in briefs[:3]:
-            intro_lines.extend(points[:2])
-        intro_lines = _dedupe_preserve_order([_sentence_case(p) for p in intro_lines if p])
-        if intro_lines:
-            if any(term in title for term in ("introduction", "executive summary", "overview")):
-                paragraphs.append(
-                    "The introduction should therefore position the engagement as a controlled "
-                    "transformation program rather than a generic technology replacement. "
-                    + " ".join(intro_lines[:3])
-                )
-            elif any(term in title for term in ("solution", "approach", "strategy")):
-                paragraphs.append(
-                    "The section should explain how the proposal moves from context to execution. "
-                    + " ".join(intro_lines[:3])
-                )
-            else:
-                paragraphs.append(
-                    "The section should reflect the evidence-backed delivery themes and keep them "
-                    "specific to this client context. "
-                    + " ".join(intro_lines[:3])
-                )
+    fact_lines: list[str] = []
+    for _label, _source, points in briefs[:4]:
+        fact_lines.extend(points[:2])
+    fact_lines = _dedupe_preserve_order([_proposalize_fact(p) for p in fact_lines if p])
+
+    if fact_lines:
+        if any(term in title for term in ("introduction", "executive summary", "overview")):
+            paragraphs.append(
+                "The proposal is anchored by executive sponsorship, strong governance, and a "
+                "clear partner model so the transition can be controlled from mobilization through "
+                "cutover. " + " ".join(fact_lines[:2])
+            )
+            paragraphs.append(
+                "Change management is supported through Temenos learning resources, while the "
+                "migration strategy remains phase-aware and governed by the selected rollout model. "
+                + " ".join(fact_lines[2:4])
+            )
+        elif any(term in title for term in ("solution", "approach", "strategy")):
+            paragraphs.append(
+                "The delivery approach combines phased migration, governance checkpoints, and "
+                "solution-specific preparation so the target state is reached without introducing "
+                "uncontrolled risk. " + " ".join(fact_lines[:2])
+            )
+            paragraphs.append(
+                "Implementation activities are sequenced around validation, change readiness, and "
+                "controlled cutover, with the selected Temenos tools and partner support used to "
+                "stabilise the move into live operation. " + " ".join(fact_lines[2:4])
+            )
         else:
             paragraphs.append(
-                "The section should stay grounded in the retrieved corpus and express the relevant "
-                "delivery themes in proposal language rather than commentary."
+                "The section is grounded in the retrieved corpus and keeps the delivery narrative "
+                "aligned to the client context. " + " ".join(fact_lines[:3])
             )
     else:
         paragraphs.append(
-            "No direct evidence was retrieved for this section, so the text should remain conservative "
-            "and use only the confirmed request context."
+            "The section remains grounded in the confirmed client context and delivery model, "
+            "with assumptions kept explicit wherever the knowledge base is silent."
         )
 
-    if any(term in title for term in ("introduction", "executive summary", "overview")):
+    if req.instruction:
         paragraphs.append(
-            "The final wording should read like a real proposal opening: client-specific, "
-            "implementation-oriented, and free of document names, chunk ids, or source commentary."
-        )
-    else:
-        paragraphs.append(
-            "The final wording should read like a submission-ready proposal section and should not "
-            "explain where the evidence came from."
+            f"Revision request incorporated: {req.instruction.strip()}."
         )
 
     return "\n\n".join(paragraphs)
@@ -552,6 +580,26 @@ def _apply_context_guardrails(content: str, req: GenerateSectionRequest) -> str:
     return result.strip()
 
 
+def _remove_meta_language(content: str) -> str:
+    lines = content.splitlines()
+    filtered: list[str] = []
+    skip_patterns = (
+        "questionnaire context:",
+        "the section should",
+        "the final wording should",
+        "no direct evidence was retrieved",
+        "the retrieved evidence supports",
+    )
+    for line in lines:
+        lowered = line.strip().lower()
+        if any(lowered.startswith(pattern) for pattern in skip_patterns):
+            continue
+        filtered.append(line)
+    text = "\n".join(filtered)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text
+
+
 async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     # 1) Retrieve evidence (Agent 6).
     evidence = retrieve_for_section(
@@ -651,6 +699,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         content = _local_section_content(req, evidence, length)
 
     content = _apply_context_guardrails(content, req)
+    content = _remove_meta_language(content)
     return SectionResult(
         title=req.section_title,
         content=_strip_leading_heading(content, req.section_title),
