@@ -817,11 +817,14 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         content = _remove_meta_language(content)
         content = _remove_source_echoes(content)
     if len(_clean_phrase(content).split()) < 120:
-        content = _local_section_content(req, evidence, length)
-        content = _apply_context_guardrails(content, req)
-        content = _rewrite_common_echoes(content)
-        content = _remove_meta_language(content)
-        content = _remove_source_echoes(content)
+        fallback = _local_section_content(req, evidence, length)
+        fallback = _apply_context_guardrails(fallback, req)
+        fallback = _rewrite_common_echoes(fallback)
+        fallback = _remove_meta_language(fallback)
+        if len(_clean_phrase(fallback).split()) >= 40:
+            content = fallback
+        else:
+            content = _local_section_content(req, evidence, length)
     return SectionResult(
         title=req.section_title,
         content=_strip_leading_heading(content, req.section_title),
