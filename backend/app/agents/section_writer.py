@@ -635,6 +635,44 @@ def _rewrite_common_echoes(content: str) -> str:
     return content
 
 
+def _remove_source_echoes(content: str) -> str:
+    sentences = _split_sentences(content)
+    kept: list[str] = []
+    for sentence in sentences:
+        lowered = sentence.lower()
+        if any(
+            term in lowered
+            for term in (
+                "documented procedure",
+                "process step should be completed",
+                "should be completed",
+                "questionnaire context",
+                "retrieved evidence",
+                "source document",
+                "source material",
+                "chunk",
+                "best practice",
+                "final wording should",
+                "write the section",
+                "proposal section",
+                "edit",
+                "review",
+                "appendix",
+                "evidence labels",
+                "selected sections are mentioned further below",
+            )
+        ):
+            continue
+        cleaned = re.sub(r"\b\d+(?:\.\d+){1,}\b", "", _clean_phrase(sentence))
+        cleaned = _clean_phrase(cleaned)
+        if len(cleaned.split()) < 4:
+            continue
+        kept.append(cleaned.rstrip(".") + ".")
+    if kept:
+        return " ".join(_dedupe_preserve_order(kept))
+    return content
+
+
 def _looks_like_commentary(content: str) -> bool:
     text = _clean_phrase(content).lower()
     if not text:
@@ -771,11 +809,13 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     content = _apply_context_guardrails(content, req)
     content = _rewrite_common_echoes(content)
     content = _remove_meta_language(content)
+    content = _remove_source_echoes(content)
     if _looks_like_commentary(content):
         content = _rewrite_commentary_to_proposal(req, evidence, content, length)
         content = _apply_context_guardrails(content, req)
         content = _rewrite_common_echoes(content)
         content = _remove_meta_language(content)
+        content = _remove_source_echoes(content)
     return SectionResult(
         title=req.section_title,
         content=_strip_leading_heading(content, req.section_title),
