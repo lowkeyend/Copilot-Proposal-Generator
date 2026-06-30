@@ -600,6 +600,34 @@ def _remove_meta_language(content: str) -> str:
     return text
 
 
+def _rewrite_common_echoes(content: str) -> str:
+    replacements = [
+        (
+            r"Temenos Implementation Methodology \(TIM\) is a process[- ]driven implementation approach, with each step in the implementation clearly identified\.",
+            "TIM provides a process-driven implementation framework with clearly identified steps from initiation through closure.",
+        ),
+        (
+            r"Temenos through its learning suite will support the change management during and after the initial renovation phase\.",
+            "Temenos learning resources will support change management before go-live and through hypercare.",
+        ),
+        (
+            r"Finally, the migration will be phased or in a big[- ]bang, and secured by the experience of Temenos, its Partner networks as well as Temenos pre-packaged tools\.",
+            "The migration will be executed in phased stages, supported by Temenos experience, partner capability, and pre-packaged tools.",
+        ),
+        (
+            r"The transformation shall also be supported by a strong Executive Sponsorship promoting and supporting the simplification and adopt principles, a Strong Governance and, a rich and proven Partner Model bringing experience, capacity and additional accelerators\.",
+            "Delivery will be anchored by executive sponsorship, a strong governance structure, and a proven partner model that brings experience, capacity, and accelerators.",
+        ),
+        (
+            r"The implementation of all the new proposed Temenos solutions in this proposal will be managed by SYS\.",
+            "The implementation of the proposed Temenos solutions will be managed through a structured delivery governance model.",
+        ),
+    ]
+    for pattern, replacement in replacements:
+        content = re.sub(pattern, replacement, content, flags=re.IGNORECASE)
+    return content
+
+
 async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     # 1) Retrieve evidence (Agent 6).
     evidence = retrieve_for_section(
@@ -699,6 +727,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         content = _local_section_content(req, evidence, length)
 
     content = _apply_context_guardrails(content, req)
+    content = _rewrite_common_echoes(content)
     content = _remove_meta_language(content)
     return SectionResult(
         title=req.section_title,
