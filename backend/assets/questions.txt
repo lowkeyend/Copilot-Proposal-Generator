@@ -1,0 +1,23 @@
+1. Which segments is the Bank planning to launch? (Retail/SME/Corporate)
+
+2. What products is the Bank planning to introduce? (I.e. Current Account, Savings Account, Lending Products, Treasury etc.). Please provide MVP wise breakup of the products.
+
+3. What are the regulatory Interfaces integrations to be considered in the scope. Please provide a list of Interfaces (i.e. Payment rails, ID Verification, Credit Bureau, etc.). Please provide MVP wise breakup.
+
+4. What other channels and internal interface integrations should be covered in the scope? (i.e. Digital Platform - Mobile, Internet Banking, Call Center, ATM, ERP, CRM etc.)
+
+5. Which Middleware platform will the Bank use for Integration purposes?
+
+6. How many regulatory reports should be covered in scope?  Please provide the list of regulatory reports.
+
+7. Will the Bank use any reporting solution/platform or develop a Data warehouse? Please provide the list of regulatory reports.
+
+8. Which Database is the Bank planning to use? (i.e. Oracle, MySQL, Postgre SQL etc.)
+
+9. As per the discussion, the solution provided will be hosted on - cloud on AWS. Please confirm this assumption.
+
+10. Does the Bank require deployment on any containerized platform (i.e. RedHat OpenShift)?
+
+11. Kindly provide the No. of Target customers and Target Accounts to be opened. Please provide projection for at least 3 years.
+
+12. Kindly provide MVP wise launch plan and target dates.

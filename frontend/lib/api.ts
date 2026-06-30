@@ -4,9 +4,17 @@ import type {
   IntakeProfile,
   KnowledgeBaseChunk,
   KnowledgeBaseChunkUpdate,
+  ChatMessage,
+  DocumentQueryResponse,
+  InsightResponse,
   KnowledgeBaseStatus,
   KnowledgeBaseUploadResponse,
+  ParsedField,
+  OpenRouterSettingsStatus,
+  OpenRouterSettingsUpdate,
   ProposalTemplate,
+  PlannerResponse,
+  RfpParseResponse,
   ReviewIssue,
   SectionResult,
   TocSection,
@@ -63,6 +71,15 @@ export const api = {
   models: () =>
     jsonFetch<{ models: string[]; default: string; llm_ready: boolean }>("/models"),
 
+  getOpenRouterSettings: () =>
+    jsonFetch<OpenRouterSettingsStatus>("/settings/llm"),
+
+  saveOpenRouterSettings: (body: OpenRouterSettingsUpdate) =>
+    jsonFetch<OpenRouterSettingsStatus>("/settings/llm", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   listKnowledgeChunks: (limit = 200) =>
     jsonFetch<{ chunks: KnowledgeBaseChunk[]; count: number }>(
       `/knowledge-base/chunks?limit=${limit}`
@@ -96,15 +113,55 @@ export const api = {
       { method: "DELETE" }
     ),
 
+  queryDocs: (body: {
+    question: string;
+    history?: ChatMessage[];
+    document_names?: string[];
+    model?: string;
+    top_k?: number;
+  }) =>
+    jsonFetch<DocumentQueryResponse>("/query-docs", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  parseRfp: (files: File[], model?: string) => {
+    const form = new FormData();
+    for (const file of files) form.append("files", file);
+    if (model) form.append("model", model);
+    return uploadFetch<RfpParseResponse>("/parse-rfp", form);
+  },
+
+  planNextSteps: (body: {
+    context: ClientContext;
+    parsed_rfp?: RfpParseResponse | null;
+    model?: string;
+  }) =>
+    jsonFetch<PlannerResponse>("/plan-next-steps", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  analyzeInsights: (body: {
+    context: ClientContext;
+    parsed_rfp?: RfpParseResponse | null;
+    mode?: "agent" | "web";
+    focus_areas?: string[];
+    model?: string;
+  }) =>
+    jsonFetch<InsightResponse>("/insight-studio/analyze", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   generateContext: (body: {
     prompt: string;
     model?: string;
     client_name?: string;
     industry?: string;
-    project_type?: string;
     client_profile?: "established" | "greenfield" | "unknown";
-    implementation_context?: string;
     canonical_product?: string;
+    selected_documents?: string[];
     intake?: IntakeProfile;
   }) =>
     jsonFetch<{

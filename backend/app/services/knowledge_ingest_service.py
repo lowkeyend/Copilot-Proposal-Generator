@@ -36,7 +36,7 @@ def _split_sentences(text: str) -> list[str]:
     return [part.strip() for part in parts if part.strip()]
 
 
-def _chunk_text(text: str, chunk_size: int = 650, overlap: int = 120) -> list[str]:
+def _chunk_text(text: str, chunk_size: int = 500, overlap: int = 90) -> list[str]:
     sentences = _split_sentences(text)
     if not sentences:
         return [text] if text else []
@@ -68,6 +68,11 @@ def _chunk_text(text: str, chunk_size: int = 650, overlap: int = 120) -> list[st
     if final:
         chunks.append(final)
     return [_clean(chunk) for chunk in chunks if _clean(chunk)]
+
+
+def _batched(items: list, size: int = 16):
+    for index in range(0, len(items), size):
+        yield items[index : index + size]
 
 
 async def _read_upload(file: UploadFile) -> bytes:
@@ -161,7 +166,8 @@ class KnowledgeIngestService:
                     )
                 )
 
-        qdrant.upsert_points(points)
+        for batch in _batched(points, size=16):
+            qdrant.upsert_points(batch)
         return filenames, len(points)
 
 

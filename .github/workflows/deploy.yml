@@ -13,24 +13,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          node-version: 22
+          python-version: "3.11"
 
-      - name: Deploy backend to Railway
+      - name: Install huggingface_hub
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install huggingface_hub
+
+      - name: Deploy backend to Hugging Face Space
         working-directory: backend
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          npx @railway/cli up . \
-            --service backend \
-            --environment production \
-            --project ${{ secrets.RAILWAY_PROJECT_ID }} \
-            --ci \
-            --detach \
-            --json \
-            --path-as-root
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          api.upload_folder(
+              repo_id="fawadsidd17/proposal-copilot-backend",
+              repo_type="space",
+              folder_path=".",
+              path_in_repo=".",
+              commit_message="Deploy backend update",
+              ignore_patterns=[
+                  ".venv/**",
+                  "__pycache__/**",
+                  "*.log",
+                  "*.err",
+                  ".env",
+                  ".env.*",
+                  "generated/**",
+                  "storage/**",
+                  "qdrant_local_db/**",
+              ],
+          )
+          PY
 
   deploy-frontend:
     runs-on: ubuntu-latest
@@ -48,11 +71,9 @@ jobs:
         working-directory: frontend
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_SCOPE: ${{ secrets.VERCEL_SCOPE }}
         run: |
           npx vercel deploy \
             --prod \
             --yes \
             --token "$VERCEL_TOKEN" \
-            --scope "$VERCEL_SCOPE" \
-            --build-env NEXT_PUBLIC_API_BASE=https://backend-production-a3cd.up.railway.app
+            --build-env NEXT_PUBLIC_API_BASE=https://fawadsidd17-proposal-copilot-backend.hf.space

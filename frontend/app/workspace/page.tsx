@@ -29,6 +29,12 @@ import { EvidenceDrawer } from "@/components/EvidenceDrawer";
 import { ReviewPanel } from "@/components/ReviewPanel";
 import { VersionPanel } from "@/components/VersionPanel";
 import { KbStatus } from "@/components/KbStatus";
+import { DropdownMultiSelect } from "@/components/DropdownMultiSelect";
+import { TEMENOS_PRODUCT_OPTIONS } from "@/lib/intakeOptions";
+
+function canonicalProductLabel(values: string[]) {
+  return values.filter(Boolean).join(", ");
+}
 
 export default function WorkspacePage() {
   const router = useRouter();
@@ -53,8 +59,8 @@ export default function WorkspacePage() {
   const title = useMemo(
     () =>
       store.context.client_name
-        ? `${store.context.project_type || "Proposal"} — ${store.context.client_name}`
-        : store.context.project_type || "Untitled Proposal",
+        ? `${store.context.client_name} — ${canonicalProductLabel(store.context.canonical_product) || "Proposal"}`
+        : canonicalProductLabel(store.context.canonical_product) || "Untitled Proposal",
     [store.context]
   );
 
@@ -212,6 +218,27 @@ export default function WorkspacePage() {
     }
   }
 
+  function resetWorkspace() {
+    const confirmed = window.confirm(
+      "Reset the workspace? This will clear the prompt, parsed RFP, TOC, generated sections, and current proposal context."
+    );
+    if (!confirmed) return;
+    store.resetWorkspace();
+    setError("");
+    setBusySection(null);
+    setGeneratingAll(false);
+    setProgress({ done: 0, total: 0 });
+    setEvidenceFor(null);
+    setReviewOpen(false);
+    setReviewLoading(false);
+    setIssues([]);
+    setReviewSummary("");
+    setVersionsOpen(false);
+    setExporting(false);
+    setExportUrl("");
+    router.push("/");
+  }
+
   const hasContent = store.sections.some((s) => s.content);
 
   return (
@@ -244,6 +271,10 @@ export default function WorkspacePage() {
           <Button variant="outline" size="sm" onClick={() => router.push("/knowledge-base")}>
             <Database className="h-4 w-4" />
             Knowledge Base
+          </Button>
+          <Button variant="outline" size="sm" onClick={resetWorkspace}>
+            <Sparkles className="h-4 w-4" />
+            Reset Workspace
           </Button>
           <KbStatus />
         </div>
@@ -291,28 +322,13 @@ export default function WorkspacePage() {
                 <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Canonical Product
                 </label>
-                <input
-                  value={store.context.canonical_product || "Temenos Transact"}
-                  onChange={(e) =>
-                    store.setContext({ canonical_product: e.target.value })
-                  }
-                  className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Implementation Context
-                </label>
-                <textarea
-                  rows={2}
-                  value={
-                    store.context.implementation_context ||
-                    "Modernization / migration for an existing institution"
-                  }
-                  onChange={(e) =>
-                    store.setContext({ implementation_context: e.target.value })
-                  }
-                  className="w-full rounded-md border border-input bg-card px-2 py-1.5 text-xs"
+                <DropdownMultiSelect
+                  label=""
+                  options={TEMENOS_PRODUCT_OPTIONS}
+                  value={store.context.canonical_product}
+                  onChange={(next) => store.setContext({ canonical_product: next })}
+                  placeholder="Add canonical product"
+                  helper="Select one or more products to guide tone and terminology."
                 />
               </div>
             </CardContent>

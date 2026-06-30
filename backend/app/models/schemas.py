@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _uid() -> str:
@@ -26,7 +26,10 @@ def _now() -> str:
 # Client context (Agent 1)
 # --------------------------------------------------------------------------
 class IntakeProfile(BaseModel):
+    project_mode: Literal["implementation", "upgrade", "unknown"] = "implementation"
+    upgrade_type: Literal["functional", "technical", "non-functional", "mixed", "unknown"] = "unknown"
     launch_segments: list[str] = Field(default_factory=list)
+    module_list: list[str] = Field(default_factory=list)
     phase_1_products: list[str] = Field(default_factory=list)
     phase_2_products: list[str] = Field(default_factory=list)
     regulatory_interfaces_phase_1: list[str] = Field(default_factory=list)
@@ -41,6 +44,14 @@ class IntakeProfile(BaseModel):
     data_warehouse_platform: str = ""
     implementation_methodology: str = "TIM"
     delivery_model: str = "Phased MVP"
+    current_system: str = ""
+    current_version: str = ""
+    target_version: str = ""
+    upgrade_strategy: str = ""
+    hardware_requirements: str = ""
+    infrastructure_requirements: str = ""
+    current_gaps: str = ""
+    desired_capabilities: str = ""
     target_customers_year_1: str = ""
     target_customers_year_2: str = ""
     target_customers_year_3: str = ""
@@ -58,9 +69,17 @@ class ClientContext(BaseModel):
     client_profile: Literal["established", "greenfield", "unknown"] = "established"
     implementation_context: str = "Modernization / migration for an existing institution"
     canonical_product: str = "Temenos Transact"
+    selected_documents: list[str] = Field(default_factory=list)
     intake: IntakeProfile = Field(default_factory=IntakeProfile)
     tone: str = "Formal"
     special_instructions: str = ""
+
+    @field_validator("canonical_product", mode="before")
+    @classmethod
+    def _join_canonical_products(cls, value: Any) -> str:
+        if isinstance(value, list):
+            return ", ".join(str(item).strip() for item in value if str(item).strip())
+        return str(value or "").strip() or "Temenos Transact"
 
 
 class GenerateContextRequest(BaseModel):
@@ -73,6 +92,8 @@ class GenerateContextRequest(BaseModel):
     client_profile: Optional[Literal["established", "greenfield", "unknown"]] = None
     implementation_context: Optional[str] = None
     canonical_product: Optional[str] = None
+    selected_documents: list[str] = Field(default_factory=list)
+    project_mode: Optional[Literal["implementation", "upgrade", "unknown"]] = None
     intake: Optional[IntakeProfile] = None
 
 
@@ -148,6 +169,7 @@ class EvidenceChunk(BaseModel):
     summary: str = ""
     source_proposal: str = ""
     source_section: str = ""
+    source_document: str = ""
     proposal_family: str = ""
     chunk_id: str = ""
     source_type: str = "document"
@@ -159,6 +181,7 @@ class KnowledgeBaseChunk(BaseModel):
     text: str = ""
     source_proposal: str = ""
     source_section: str = ""
+    source_document: str = ""
     proposal_family: str = ""
     score: float = 0.0
     payload: dict[str, Any] = Field(default_factory=dict)
@@ -169,6 +192,120 @@ class KnowledgeBaseChunkUpdate(BaseModel):
     source_proposal: Optional[str] = None
     source_section: Optional[str] = None
     proposal_family: Optional[str] = None
+    source_document: Optional[str] = None
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant", "system"]
+    content: str
+
+
+class DocumentQueryRequest(BaseModel):
+    question: str
+    history: list[ChatMessage] = Field(default_factory=list)
+    document_names: list[str] = Field(default_factory=list)
+    model: Optional[str] = None
+    top_k: int = 8
+
+
+class DocumentQueryResponse(BaseModel):
+    answer: str
+    evidence: list[EvidenceChunk] = Field(default_factory=list)
+    used_documents: list[str] = Field(default_factory=list)
+
+
+class ParsedField(BaseModel):
+    key: str
+    label: str
+    value: str = ""
+    category: str = ""
+    confidence: float = 0.0
+    source_excerpt: str = ""
+    notes: str = ""
+
+
+class RfpParseRequest(BaseModel):
+    prompt: str = ""
+    model: Optional[str] = None
+
+
+class RfpParseResponse(BaseModel):
+    filename: str = ""
+    title: str = ""
+    project_mode: Literal["implementation", "upgrade", "unknown"] = "unknown"
+    storyline: str = ""
+    fields: list[ParsedField] = Field(default_factory=list)
+    intake: IntakeProfile = Field(default_factory=IntakeProfile)
+    summary: str = ""
+    missing_fields: list[str] = Field(default_factory=list)
+    next_steps: list[str] = Field(default_factory=list)
+
+
+class PlannerRequest(BaseModel):
+    context: ClientContext
+    parsed_rfp: Optional[RfpParseResponse] = None
+    model: Optional[str] = None
+
+
+class PlannerResponse(BaseModel):
+    next_steps: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    verifications: list[str] = Field(default_factory=list)
+    milestones: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    timeline_notes: list[str] = Field(default_factory=list)
+    manday_estimates: list["MandayEstimate"] = Field(default_factory=list)
+    role_assignments: list["RoleAssignment"] = Field(default_factory=list)
+    decision_gates: list[str] = Field(default_factory=list)
+
+
+class InsightItem(BaseModel):
+    title: str
+    detail: str
+    severity: Literal["low", "medium", "high"] = "medium"
+    evidence: list[str] = Field(default_factory=list)
+    action: str = ""
+
+
+class MandayEstimate(BaseModel):
+    workstream: str
+    low: int
+    high: int
+    rationale: str = ""
+
+
+class RoleAssignment(BaseModel):
+    role: str
+    owns: list[str] = Field(default_factory=list)
+    checkpoints: list[str] = Field(default_factory=list)
+
+
+class ModuleHardwareClassification(BaseModel):
+    module: str
+    complexity: Literal["low", "medium", "high"] = "medium"
+    hardware_band: Literal["small", "medium", "large"] = "medium"
+    signals: list[str] = Field(default_factory=list)
+    recommendation: str = ""
+
+
+class InsightRequest(BaseModel):
+    context: ClientContext
+    parsed_rfp: Optional[RfpParseResponse] = None
+    mode: Literal["agent", "web"] = "agent"
+    focus_areas: list[str] = Field(default_factory=list)
+    model: Optional[str] = None
+
+
+class InsightResponse(BaseModel):
+    summary: str = ""
+    insight_items: list[InsightItem] = Field(default_factory=list)
+    leakage_warnings: list[InsightItem] = Field(default_factory=list)
+    scope_gaps: list[InsightItem] = Field(default_factory=list)
+    manday_estimates: list[MandayEstimate] = Field(default_factory=list)
+    role_assignments: list[RoleAssignment] = Field(default_factory=list)
+    module_hardware: list[ModuleHardwareClassification] = Field(default_factory=list)
+    proposal_targets: list[str] = Field(default_factory=list)
+    next_best_actions: list[str] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------
@@ -290,6 +427,17 @@ class KnowledgeBaseStatus(BaseModel):
     embedding_provider: str = ""
     embedding_model: str = ""
     message: str = ""
+
+
+class OpenRouterSettingsUpdate(BaseModel):
+    api_key: str = ""
+
+
+class OpenRouterSettingsStatus(BaseModel):
+    api_key_set: bool = False
+    source: Literal["runtime", "env", "none"] = "none"
+    default_model: str = "deepseek/deepseek-chat"
+    models: list[str] = Field(default_factory=list)
 
 
 class GenericResponse(BaseModel):

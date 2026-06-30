@@ -25,6 +25,7 @@ _TEXT_KEYS = ("text", "chunk", "content", "body", "passage", "chunk_text")
 _SOURCE_KEYS = (
     "source_proposal",
     "source",
+    "document_name",
     "document",
     "doc",
     "file",
@@ -196,6 +197,7 @@ class QdrantService:
                     score=float(getattr(h, "score", 0.0) or 0.0),
                     source_proposal=_first(payload, _SOURCE_KEYS),
                     source_section=_first(payload, _SECTION_KEYS),
+                    source_document=_first(payload, ("document_name", "file", "filename", "document")),
                     proposal_family=_first(payload, _FAMILY_KEYS),
                     chunk_id=str(getattr(h, "id", "")),
                 )
@@ -236,6 +238,7 @@ class QdrantService:
                     score=float(getattr(h, "score", 0.0) or 0.0),
                     source_proposal=_first(payload, _SOURCE_KEYS),
                     source_section=_first(payload, _SECTION_KEYS),
+                    source_document=_first(payload, ("document_name", "file", "filename", "document")),
                     proposal_family=_first(payload, _FAMILY_KEYS),
                     chunk_id=str(getattr(h, "id", "")),
                 )
@@ -291,7 +294,7 @@ class QdrantService:
         client.upsert(
             collection_name=self.settings.qdrant_collection,
             points=points,
-            wait=True,
+            wait=False,
         )
 
     @staticmethod
@@ -300,6 +303,7 @@ class QdrantService:
         return {
             "text": _first(payload, _TEXT_KEYS),
             "source": _first(payload, _SOURCE_KEYS),
+            "document": _first(payload, ("document_name", "file", "filename", "document")),
             "section": _first(payload, _SECTION_KEYS),
             "family": _first(payload, _FAMILY_KEYS),
         }
@@ -331,6 +335,7 @@ class QdrantService:
                     text=_first(payload, _TEXT_KEYS),
                     source_proposal=_first(payload, _SOURCE_KEYS),
                     source_section=_first(payload, _SECTION_KEYS),
+                    source_document=_first(payload, ("document_name", "file", "filename", "document")),
                     proposal_family=_first(payload, _FAMILY_KEYS),
                     score=float(getattr(p, "score", 0.0) or 0.0),
                     payload=dict(payload),
@@ -362,6 +367,7 @@ class QdrantService:
             text=_first(payload, _TEXT_KEYS),
             source_proposal=_first(payload, _SOURCE_KEYS),
             source_section=_first(payload, _SECTION_KEYS),
+            source_document=_first(payload, ("document_name", "file", "filename", "document")),
             proposal_family=_first(payload, _FAMILY_KEYS),
             payload=dict(payload),
         )

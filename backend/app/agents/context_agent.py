@@ -27,6 +27,8 @@ Return JSON exactly in this shape:
   "client_profile": "established|greenfield|unknown",
   "implementation_context": "",
   "canonical_product": "",
+  "selected_documents": [],
+  "project_mode": "implementation|upgrade|unknown",
   "tone": "",
   "special_instructions": ""
 }}
@@ -39,6 +41,9 @@ Rules:
   greenfield bank, new licence, startup bank, or market launch. Use "established"
   for an existing institution, migration, upgrade, modernization, replacement, or
   implementation for a named operating bank. Otherwise use "unknown".
+- project_mode: use "upgrade" when the request is about replacing/upgrading an
+  existing Temenos or banking platform. Use "implementation" when it is a new
+  implementation or launch. Otherwise use "unknown".
 - implementation_context: describe the current-client situation, e.g.
   "Modernization / migration for an existing institution" or "Greenfield launch".
 - canonical_product: the exact product/platform name to use consistently. For
@@ -74,7 +79,8 @@ async def run_context_agent(req: GenerateContextRequest) -> ClientContext:
         implementation_context=_clean(data.get("implementation_context"))
         or "Modernization / migration for an existing institution",
         canonical_product=_clean(data.get("canonical_product")) or "Temenos Transact",
-        intake=req.intake or IntakeProfile(),
+        selected_documents=_clean_list(req.selected_documents),
+        intake=_intake_from_req(req, data),
         tone=_clean(data.get("tone")) or "Formal",
         special_instructions=_clean(data.get("special_instructions")),
     )
@@ -92,6 +98,10 @@ async def run_context_agent(req: GenerateContextRequest) -> ClientContext:
         ctx.implementation_context = req.implementation_context
     if req.canonical_product:
         ctx.canonical_product = req.canonical_product
+    if req.selected_documents:
+        ctx.selected_documents = _clean_list(req.selected_documents)
+    if req.project_mode:
+        ctx.intake.project_mode = req.project_mode
     if req.intake:
         ctx.intake = req.intake
     if not ctx.canonical_product and "temenos" in (ctx.project_type or "").lower():
@@ -126,3 +136,30 @@ def _normalise_client_name(value: str) -> str:
     if lowered == "alfalah bank limited":
         return "Bank Alfalah"
     return cleaned
+
+
+def _clean_list(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = " ".join(str(value).split()).strip()
+        if not item:
+            continue
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(item)
+    return cleaned
+
+
+def _intake_from_req(req: GenerateContextRequest, data: dict) -> IntakeProfile:
+    intake = req.intake or IntakeProfile()
+    project_mode = _clean(data.get("project_mode"))
+    if project_mode in {"implementation", "upgrade", "unknown"}:
+        intake.project_mode = project_mode
+    elif req.project_mode:
+        intake.project_mode = req.project_mode
+    return intake

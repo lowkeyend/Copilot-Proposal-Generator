@@ -4,6 +4,7 @@ import type {
   ClientContext,
   ProposalTemplate,
   ProposalQualitySettings,
+  RfpParseResponse,
   SectionResult,
   TocSection,
 } from "./types";
@@ -18,6 +19,7 @@ interface ProposalState {
   familyRationale: string;
   template: ProposalTemplate | null;
   quality: ProposalQualitySettings;
+  parsedRfp: RfpParseResponse | null;
 
   // workspace
   toc: TocSection[];
@@ -32,6 +34,7 @@ interface ProposalState {
   setFamilyRationale: (v: string) => void;
   setTemplate: (t: ProposalTemplate | null) => void;
   setQuality: (patch: Partial<ProposalQualitySettings>) => void;
+  setParsedRfp: (value: RfpParseResponse | null) => void;
 
   setToc: (toc: TocSection[]) => void;
   addTocSection: (title?: string) => void;
@@ -52,12 +55,14 @@ interface ProposalState {
 const emptyContext: ClientContext = {
   client_name: "",
   industry: "",
-  project_type: "",
   client_profile: "established",
-  implementation_context: "Modernization / migration for an existing institution",
-  canonical_product: "Temenos Transact",
+  canonical_product: ["Temenos Transact"],
+  selected_documents: [],
   intake: {
+    project_mode: "implementation",
+    upgrade_type: "unknown",
     launch_segments: [],
+    module_list: [],
     phase_1_products: [],
     phase_2_products: [],
     regulatory_interfaces_phase_1: [],
@@ -72,6 +77,14 @@ const emptyContext: ClientContext = {
     data_warehouse_platform: "",
     implementation_methodology: "TIM",
     delivery_model: "Phased MVP",
+    current_system: "",
+    current_version: "",
+    target_version: "",
+    upgrade_strategy: "",
+    hardware_requirements: "",
+    infrastructure_requirements: "",
+    current_gaps: "",
+    desired_capabilities: "",
     target_customers_year_1: "",
     target_customers_year_2: "",
     target_customers_year_3: "",
@@ -113,6 +126,7 @@ export const useProposalStore = create<ProposalState>()(
       familyRationale: "",
       template: null,
       quality: { ...defaultQuality },
+      parsedRfp: null,
       toc: [],
       sections: [],
       proposalId: null,
@@ -126,6 +140,7 @@ export const useProposalStore = create<ProposalState>()(
       setTemplate: (t) => set({ template: t }),
       setQuality: (patch) =>
         set((s) => ({ quality: { ...s.quality, ...patch } })),
+      setParsedRfp: (value) => set({ parsedRfp: value }),
 
       setToc: (toc) => set({ toc }),
       addTocSection: (title = "New Section") =>
@@ -167,8 +182,54 @@ export const useProposalStore = create<ProposalState>()(
       setProposalId: (id) => set({ proposalId: id }),
 
       resetWorkspace: () =>
-        set({ toc: [], sections: [], proposalId: null }),
+        set({
+          prompt: "",
+          model: "deepseek/deepseek-chat",
+          context: { ...emptyContext },
+          proposalFamily: "",
+          familyRationale: "",
+          template: null,
+          quality: { ...defaultQuality },
+          parsedRfp: null,
+          toc: [],
+          sections: [],
+          proposalId: null,
+        }),
     }),
-    { name: "proposal-copilot" }
+    {
+      name: "proposal-copilot",
+      version: 3,
+      migrate: (persisted: any) => {
+        const context = persisted?.context ?? {};
+        const intake = context?.intake ?? {};
+        const canonicalProduct = context?.canonical_product;
+        const normalizedCanonicalProduct = Array.isArray(canonicalProduct)
+          ? canonicalProduct.filter((item: unknown) => typeof item === "string" && item.trim())
+          : typeof canonicalProduct === "string" && canonicalProduct.trim()
+            ? [canonicalProduct.trim()]
+            : [...emptyContext.canonical_product];
+        return {
+          ...persisted,
+          context: {
+            ...emptyContext,
+            ...context,
+            canonical_product: normalizedCanonicalProduct,
+            selected_documents: Array.isArray(context.selected_documents)
+              ? context.selected_documents.filter((item: unknown) => typeof item === "string" && item.trim())
+              : [],
+            intake: {
+              ...emptyContext.intake,
+              ...intake,
+              module_list: Array.isArray(intake.module_list) ? intake.module_list : [],
+            },
+          },
+          quality: {
+            ...defaultQuality,
+            ...(persisted?.quality ?? {}),
+          },
+          parsedRfp: persisted?.parsedRfp ?? null,
+        };
+      },
+    }
   )
 );

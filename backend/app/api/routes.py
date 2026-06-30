@@ -14,6 +14,8 @@ from app.config import get_settings
 from app.models.schemas import (
     BuildTocRequest,
     BuildTocResponse,
+    DocumentQueryRequest,
+    DocumentQueryResponse,
     ExportDocxRequest,
     ExportDocxResponse,
     GenerateContextRequest,
@@ -22,13 +24,20 @@ from app.models.schemas import (
     GenerateProposalResponse,
     GenerateSectionRequest,
     GenericResponse,
+    InsightRequest,
+    InsightResponse,
     KnowledgeBaseStatus,
+    OpenRouterSettingsStatus,
+    OpenRouterSettingsUpdate,
     KnowledgeBaseChunk,
     KnowledgeBaseUploadResponse,
     KnowledgeBaseChunkUpdate,
+    PlannerRequest,
+    PlannerResponse,
     ProposalRecord,
     ProposalTemplate,
     ProposalVersion,
+    RfpParseResponse,
     ReviewProposalRequest,
     ReviewProposalResponse,
     SectionResult,
@@ -44,10 +53,19 @@ from app.agents.section_writer import run_section_writer
 from app.agents.template_agent import run_template_agent
 from app.agents.toc_agent import run_toc_agent
 
+from app.services.document_query_service import answer_document_query
 from app.services.docx_service import get_composer
 from app.services.knowledge_ingest_service import get_knowledge_ingest
 from app.services.llm_service import get_llm
 from app.services.qdrant_service import get_qdrant
+from app.services.planner_service import plan_next_steps
+from app.services.runtime_settings_service import (
+    get_openrouter_api_key,
+    get_openrouter_key_source,
+    save_runtime_settings,
+)
+from app.services.rfp_parser_service import parse_rfp_documents
+from app.services.insight_service import generate_insights
 from app.services.storage_service import get_storage
 
 router = APIRouter()
@@ -69,6 +87,27 @@ def models() -> dict:
         "default": settings.default_model,
         "llm_ready": get_llm().available,
     }
+
+
+@router.get("/settings/llm", response_model=OpenRouterSettingsStatus, tags=["meta"])
+def get_llm_settings() -> OpenRouterSettingsStatus:
+    return OpenRouterSettingsStatus(
+        api_key_set=bool(get_openrouter_api_key()),
+        source=get_openrouter_key_source(),
+        default_model=settings.default_model,
+        models=settings.supported_models,
+    )
+
+
+@router.post("/settings/llm", response_model=OpenRouterSettingsStatus, tags=["meta"])
+def update_llm_settings(req: OpenRouterSettingsUpdate) -> OpenRouterSettingsStatus:
+    save_runtime_settings(req.api_key)
+    return OpenRouterSettingsStatus(
+        api_key_set=bool(get_openrouter_api_key()),
+        source=get_openrouter_key_source(),
+        default_model=settings.default_model,
+        models=settings.supported_models,
+    )
 
 
 @router.get("/knowledge-base/chunks", tags=["knowledge-base"])
@@ -120,6 +159,44 @@ def delete_chunk(chunk_id: str) -> GenericResponse:
     if not ok:
         raise HTTPException(status_code=404, detail="Chunk not found or delete failed.")
     return GenericResponse(ok=True, detail="deleted")
+
+
+@router.post("/query-docs", response_model=DocumentQueryResponse, tags=["knowledge-base"])
+async def query_docs(req: DocumentQueryRequest) -> DocumentQueryResponse:
+    return await answer_document_query(
+        question=req.question,
+        history=req.history,
+        document_names=req.document_names,
+        model=req.model,
+        top_k=req.top_k,
+    )
+
+
+@router.post("/parse-rfp", response_model=RfpParseResponse, tags=["knowledge-base"])
+async def parse_rfp(
+    files: list[UploadFile] = File(...),
+    model: str = Form(""),
+) -> RfpParseResponse:
+    try:
+        return await parse_rfp_documents(files, model=model or None)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/plan-next-steps", response_model=PlannerResponse, tags=["agents"])
+async def plan_next_steps_route(req: PlannerRequest) -> PlannerResponse:
+    return await plan_next_steps(req.context, req.parsed_rfp, req.model)
+
+
+@router.post("/insight-studio/analyze", response_model=InsightResponse, tags=["agents"])
+async def insight_studio(req: InsightRequest) -> InsightResponse:
+    return await generate_insights(
+        context=req.context,
+        parsed_rfp=req.parsed_rfp,
+        mode=req.mode,
+        focus_areas=req.focus_areas,
+        model=req.model,
+    )
 
 
 # --------------------------------------------------------------------------

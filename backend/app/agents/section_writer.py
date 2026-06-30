@@ -1,4 +1,4 @@
-"""Agent 7 - Section Writer Agent.
+﻿"""Agent 7 - Section Writer Agent.
 
 Generates the proposal ONE section at a time (never the whole document at
 once). Each call receives the client context, the section name, retrieved
@@ -20,6 +20,142 @@ from app.models.schemas import (
 from app.services.llm_service import LLMError, get_llm
 
 
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+
+def _normalize_whitespace(text: str) -> str:
+    return " ".join((text or "").split())
+
+
+def _clean_phrase(text: str) -> str:
+    cleaned = _normalize_whitespace(text)
+    cleaned = cleaned.replace("Ã¢â‚¬â€œ", "-").replace("Ã¢â‚¬â€", "-").replace("Ã¢â‚¬â„¢", "'")
+    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
+    cleaned = re.sub(r"\s+-\s+", " - ", cleaned)
+    cleaned = re.sub(r"\b[iI]\s+ts\b", "its", cleaned)
+    cleaned = re.sub(r"\btemenosÃ¢â‚¬â„¢\b", "Temenos'", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip(" -")
+
+
+def _sentence_case(text: str) -> str:
+    text = _clean_phrase(text)
+    if not text:
+        return text
+    return text[0].upper() + text[1:]
+
+
+def _split_sentences(text: str) -> list[str]:
+    cleaned = _clean_phrase(text)
+    if not cleaned:
+        return []
+    parts = _SENTENCE_SPLIT.split(cleaned)
+    return [part for part in (_clean_phrase(p) for p in parts) if part]
+
+
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        key = re.sub(r"[^a-z0-9]+", " ", item.lower()).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def _with_article(text: str) -> str:
+    value = _clean_phrase(text).lower()
+    if not value:
+        return value
+    article = "an" if value[:1].lower() in "aeiou" else "a"
+    return f"{article} {value}"
+
+
+def _section_keywords(req: GenerateSectionRequest) -> list[str]:
+    values = [req.section_title, req.prompt, req.instruction, req.proposal_family]
+    values.extend(req.keywords or [])
+    text = " ".join(v for v in values if v)
+    return [t for t in re.findall(r"[a-z0-9]+", text.lower()) if len(t) > 2]
+
+
+def _section_keywords_from_text(text: str) -> list[str]:
+    cleaned = _clean_phrase(text or "")
+    if not cleaned:
+        return []
+    return [t for t in re.findall(r"[a-z0-9]+", cleaned.lower()) if len(t) > 2]
+
+def _extract_fact_sentence(sentence: str, section_keywords: list[str]) -> str | None:
+    sentence = _clean_phrase(sentence)
+    if not sentence:
+        return None
+
+    lowered = sentence.lower()
+    if lowered.startswith(("from ", "the retrieved evidence", "this evidence", "source material")):
+        return None
+    if lowered.startswith(("no direct evidence", "the resulting section", "in practical terms")):
+        return None
+    if any(
+        term in lowered
+        for term in ("proposal narrative", "board-ready", "grounded only in retrieved evidence")
+    ):
+        return None
+
+    sentence = re.sub(
+        r"^(and\s+|but\s+|or\s+|so\s+|then\s+|finally,\s+|furthermore,\s+|moreover,\s+)",
+        "",
+        sentence,
+        flags=re.IGNORECASE,
+    )
+    sentence = re.sub(
+        r"\bwill be phased or in a big[- ]bang\b",
+        "can be delivered in either a phased or big-bang model",
+        sentence,
+        flags=re.IGNORECASE,
+    )
+    sentence = re.sub(r"\bpre[- ]packaged tools\b", "pre-packaged tools", sentence, flags=re.IGNORECASE)
+    return sentence[0].upper() + sentence[1:] if sentence else sentence
+
+
+def _extract_support_points(
+    chunk: EvidenceChunk, section_keywords: list[str], limit: int = 2
+) -> list[str]:
+    text = _clean_phrase(chunk.text or "")
+    if not text:
+        return []
+    sentences = _split_sentences(text)
+    points: list[str] = []
+    for sentence in sentences:
+        fact = _extract_fact_sentence(sentence, section_keywords)
+        if fact:
+            points.append(fact.rstrip(".") + ".")
+        if len(points) >= limit:
+            break
+    if not points and text:
+        fact = _extract_fact_sentence(text[:260], section_keywords)
+        if fact:
+            points.append(fact.rstrip(".") + ".")
+    return _dedupe_preserve_order(points)
+
+
+def _evidence_briefs(
+    chunks: list[EvidenceChunk], section_keywords: list[str]
+) -> list[tuple[str, str, list[str]]]:
+    briefs: list[tuple[str, str, list[str]]] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        text_key = re.sub(r"[^a-z0-9]+", " ", _clean_phrase(chunk.text or "").lower()).strip()
+        if not text_key or text_key in seen:
+            continue
+        seen.add(text_key)
+        label = chunk.summary or chunk.source_section or chunk.source_proposal or "Retrieved evidence"
+        source = chunk.source_proposal or "unknown source"
+        points = _extract_support_points(chunk, section_keywords)
+        if points:
+            briefs.append((label, source, points))
+    return briefs[:6]
+
+
 def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceChunk], length: str) -> str:
     client = req.context.client_name or "the client"
     industry = req.context.industry or "the industry"
@@ -28,77 +164,88 @@ def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceC
     family = req.proposal_family or "the proposal family"
     tone = req.context.tone or "Formal"
     intake = _intake_summary(req.context)
+    project_phrase = _with_article(project)
+    title = req.section_title.lower()
+    keywords = _section_keywords(req)
+    briefs = _evidence_briefs(evidence, keywords)
 
-    lead = (
-        f"### {req.section_title}\n\n"
-        f"{client} requires a section that aligns the proposed solution with its "
-        f"{project.lower()} objectives, the selected {product} solution, the {family} approach, and the "
-        f"operating realities of {industry.lower()}. This section is written in "
-        f"a {tone.lower()} tone and is grounded only in retrieved evidence and "
-        f"official product context."
-    )
+    if any(term in title for term in ("introduction", "executive summary", "overview")):
+        lead = (
+            f"### {req.section_title}\n\n"
+            f"{client} is seeking {project_phrase} proposal that aligns the selected "
+            f"{product} solution with the business, delivery, and governance realities "
+            f"of {industry.lower()}. The narrative should present the case for change "
+            f"clearly, show how the proposal will be delivered in a controlled manner, "
+            f"and keep the tone {tone.lower()} and submission-ready."
+        )
+    elif any(term in title for term in ("solution", "approach", "strategy")):
+        lead = (
+            f"### {req.section_title}\n\n"
+            f"The proposed {product} solution should be described as a coherent response "
+            f"to {client}'s {project.lower()} objectives, with emphasis on how the chosen "
+            f"delivery approach and {family} structure support the target operating model."
+        )
+    else:
+        lead = (
+            f"### {req.section_title}\n\n"
+            f"{client} requires a focused {req.section_title.lower()} section that is aligned "
+            f"to the selected {product} solution, the {family} delivery pattern, and the "
+            f"operating realities of {industry.lower()}."
+        )
+
     if intake:
         lead += f" Questionnaire context: {intake}."
-
     if req.instruction:
         lead += f" The current revision instruction is: {req.instruction.strip()}."
 
-    if evidence:
-        evidence_intro = (
-            "\n\nThe retrieved evidence supports the following proposal framing:"
+    paragraphs: list[str] = [lead]
+
+    if briefs:
+        intro_lines: list[str] = []
+        for _label, _source, points in briefs[:3]:
+            intro_lines.extend(points[:2])
+        intro_lines = _dedupe_preserve_order([_sentence_case(p) for p in intro_lines if p])
+        if intro_lines:
+            if any(term in title for term in ("introduction", "executive summary", "overview")):
+                paragraphs.append(
+                    "The introduction should therefore position the engagement as a controlled "
+                    "transformation program rather than a generic technology replacement. "
+                    + " ".join(intro_lines[:3])
+                )
+            elif any(term in title for term in ("solution", "approach", "strategy")):
+                paragraphs.append(
+                    "The section should explain how the proposal moves from context to execution. "
+                    + " ".join(intro_lines[:3])
+                )
+            else:
+                paragraphs.append(
+                    "The section should reflect the evidence-backed delivery themes and keep them "
+                    "specific to this client context. "
+                    + " ".join(intro_lines[:3])
+                )
+        else:
+            paragraphs.append(
+                "The section should stay grounded in the retrieved corpus and express the relevant "
+                "delivery themes in proposal language rather than commentary."
+            )
+    else:
+        paragraphs.append(
+            "No direct evidence was retrieved for this section, so the text should remain conservative "
+            "and use only the confirmed request context."
+        )
+
+    if any(term in title for term in ("introduction", "executive summary", "overview")):
+        paragraphs.append(
+            "The final wording should read like a real proposal opening: client-specific, "
+            "implementation-oriented, and free of document names, chunk ids, or source commentary."
         )
     else:
-        evidence_intro = (
-            "\n\nNo direct evidence was retrieved for this section, so the "
-            "section is phrased conservatively and limited to the request context."
-        )
-
-    paragraphs: list[str] = [lead, evidence_intro]
-    for i, chunk in enumerate(evidence[:8], 1):
-        src = chunk.source_proposal or "an internal source"
-        sec = f" / {chunk.source_section}" if chunk.source_section else ""
-        if not chunk.text:
-            continue
-
-        snippet = " ".join(chunk.text.split())
-        if len(snippet) > 260:
-            snippet = snippet[:260].rsplit(" ", 1)[0] + "..."
-
         paragraphs.append(
-            f"\n\n{i}. From {src}{sec}, the source material reinforces that "
-            f"{snippet.lower()} "
-            f"This evidence supports a proposal narrative that should remain "
-            f"concrete, implementation-oriented, and cautious about any claim "
-            f"not directly visible in the knowledge base."
+            "The final wording should read like a submission-ready proposal section and should not "
+            "explain where the evidence came from."
         )
 
-    paragraphs.append(
-        "\n\nIn practical terms, this means the proposal should describe how the "
-        "solution will be delivered, governed, validated, and handed over, "
-        "without drifting into unsupported claims. Where the evidence shows "
-        "specific modules, operating models, deployment approaches, or delivery "
-        "phases, those should be carried forward explicitly. Where the evidence "
-        "is silent, the text should state the assumption as a proposal "
-        "recommendation rather than a fact."
-    )
-
-    if evidence:
-        paragraphs.append(
-            "\n\nThe resulting section should read as a substantive, board-ready "
-            "proposal passage: detailed enough to match a real bid document, but "
-            "still disciplined enough to avoid hallucination."
-        )
-
-    if "Temenos" in (req.proposal_family or "") or "Temenos" in project:
-        paragraphs.append(
-            f"\n\nFor Temenos-specific proposals, the section should consistently "
-            f"reference {product}, its modular banking scope, cloud-native "
-            "positioning, and the delivery benefits documented in the retrieved "
-            "evidence."
-        )
-
-    return "".join(paragraphs)
-
+    return "\n\n".join(paragraphs)
 _SYSTEM = (
     "You are a senior bid writer producing polished, client-ready proposal "
     "sections for enterprise technology engagements. Write in detailed, "
@@ -113,7 +260,9 @@ _SYSTEM = (
     "or regulatory assertions. Do not add a top-level document title "
     "- only this section. Produce submission-ready prose that preserves the "
     "specificity, structure, and implementation detail found in the source "
-    "proposal corpus."
+    "proposal corpus. Do not mention source document names, chunk IDs, the "
+    "words 'source material', or any evidence labels in the final section "
+    "body. Write the section as if it were authored directly for the client."
 )
 
 _TEMPLATE = """Write the proposal section titled: "{section_title}".
@@ -166,6 +315,9 @@ QUALITY CONTROLS
   cloud positioning unless the evidence explicitly requires another distinction.
 - Prefer TIM wording and phase-based rollout language when the questionnaire
   indicates TIM, MVP, phased launch, or go-live milestones.
+- Synthesize evidence into prose; do not restate the chunks.
+- Do not mention source document names, chunk IDs, or source commentary in
+  the final section.
 
 Write the section now. The heading is added by the system, so begin directly
 with the body. Match a formal proposal style:
@@ -194,17 +346,28 @@ def _format_evidence(chunks: list[EvidenceChunk]) -> str:
             "(No matching evidence retrieved. Write from best practice for this "
             "family while staying generic about unverified client specifics.)"
         )
+
+    section_keywords: list[str] = []
+    for chunk in chunks:
+        section_keywords.extend(_section_keywords_from_text(chunk.summary or ""))
+        section_keywords.extend(_section_keywords_from_text(chunk.source_section or ""))
+        section_keywords.extend(_section_keywords_from_text(chunk.text or ""))
+
     lines = []
-    for i, c in enumerate(chunks, 1):
+    seen: set[str] = set()
+    for i, c in enumerate(chunks[:6], 1):
+        key = re.sub(r"[^a-z0-9]+", " ", _clean_phrase(c.text or "").lower()).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
         src = c.source_proposal or "unknown source"
         sec = f" / {c.source_section}" if c.source_section else ""
-        snippet = (c.text or "").strip().replace("\n", " ")
-        if len(snippet) > 1200:
-            snippet = snippet[:1200] + "..."
-        header = c.summary or sec.strip(" /") or src
-        lines.append(f"[{i}] {header} ({src}{sec}; {c.source_type})\n{snippet}")
+        header = _clean_phrase(c.summary or sec.strip(" /") or src)
+        points = _extract_support_points(c, section_keywords, limit=2)
+        if not points:
+            continue
+        lines.append(f"[{i}] {header} ({src}{sec}; {c.source_type})\n- " + "\n- ".join(points))
     return "\n\n".join(lines)
-
 
 def _length_for(req: GenerateSectionRequest) -> str:
     if req.instruction:
@@ -235,27 +398,27 @@ def _minimum_words(req: GenerateSectionRequest) -> int:
 def _evidence_enrichment(evidence: list[EvidenceChunk], needed_words: int) -> str:
     if needed_words <= 0:
         return ""
+    section_keywords: list[str] = []
+    for chunk in evidence:
+        section_keywords.extend(_section_keywords_from_text(chunk.summary or ""))
+        section_keywords.extend(_section_keywords_from_text(chunk.source_section or ""))
+        section_keywords.extend(_section_keywords_from_text(chunk.text or ""))
+    briefs = _evidence_briefs(evidence, section_keywords)
+    if not briefs:
+        return ""
+
     lines = [
-        "\n\n### Evidence-Grounded Delivery Detail\n\n"
-        "The following delivery considerations are drawn from the retrieved proposal corpus and should be treated as part of the section scope."
+        "\n\n### Evidence-Grounded Delivery Detail\n",
+        "The following delivery points are carried forward from the retrieved corpus and translated into proposal language.",
     ]
     added = 0
-    for chunk in evidence:
+    for label, _source, points in briefs:
         if added >= needed_words:
             break
-        text = " ".join((chunk.text or "").split())
-        if not text:
-            continue
-        if len(text) > 420:
-            text = text[:420].rsplit(" ", 1)[0] + "."
-        source = chunk.summary or chunk.source_section or chunk.source_proposal or "Retrieved corpus evidence"
-        lines.append(
-            f"\n\n**{source}.** The proposal should account for {text[0].lower() + text[1:] if text else text} "
-            "This should be reflected as an actionable delivery consideration, with ownership, validation, and governance addressed during execution."
-        )
-        added += len(lines[-1].split())
+        bullet = " ".join(points[:2])
+        lines.append(f"\n\n- {label}: {bullet}")
+        added += len(bullet.split())
     return "".join(lines)
-
 
 def _strip_leading_heading(content: str, section_title: str) -> str:
     lines = content.strip().splitlines()
@@ -429,20 +592,20 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
                     "content": _TEMPLATE.format(
                         section_title=req.section_title,
                         client=req.context.client_name or "the client",
-                        industry=req.context.industry or "—",
-                        project=req.context.project_type or "—",
+                        industry=req.context.industry or "-",
+                        project=req.context.project_type or "-",
                         client_profile=req.context.client_profile or "established",
                         implementation_context=req.context.implementation_context
                         or "Modernization / migration for an existing institution",
                         canonical_product=req.context.canonical_product
                         or "Temenos Transact",
                         intake_summary=_intake_summary(req.context) or "none provided",
-                        family=req.proposal_family or "—",
+                        family=req.proposal_family or "-",
                         tone=req.context.tone or "Formal",
                         special=req.context.special_instructions or "none",
                         guidance=req.pattern_guidance
                         or "Follow the family's standard structure.",
-                        prompt=req.prompt or "—",
+                        prompt=req.prompt or "-",
                         instruction_block=instruction_block,
                         evidence=_format_evidence(evidence),
                         detail_level=req.detail_level,
@@ -494,3 +657,4 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         evidence=evidence,
         model=get_llm().resolve_model(req.model),
         )
+

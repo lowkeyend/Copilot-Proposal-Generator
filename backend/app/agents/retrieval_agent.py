@@ -183,6 +183,27 @@ def _filter_context_mismatch(
     return [chunk for chunk in chunks if not _is_greenfield_specific(chunk)]
 
 
+def _filter_by_documents(chunks: list[EvidenceChunk], document_names: list[str]) -> list[EvidenceChunk]:
+    if not document_names:
+        return chunks
+    wanted = {name.strip().lower() for name in document_names if name.strip()}
+    if not wanted:
+        return chunks
+    filtered: list[EvidenceChunk] = []
+    for chunk in chunks:
+        haystack = " ".join(
+            [
+                chunk.source_document or "",
+                chunk.source_proposal or "",
+                chunk.summary or "",
+                chunk.text or "",
+            ]
+        ).lower()
+        if any(name in haystack for name in wanted):
+            filtered.append(chunk)
+    return filtered
+
+
 def retrieve_for_section(
     section_title: str,
     keywords: list[str],
@@ -194,6 +215,11 @@ def retrieve_for_section(
 ) -> list[EvidenceChunk]:
     qdrant = get_qdrant()
     settings = get_settings()
+    selected_documents = [
+        doc.strip()
+        for doc in getattr(context, "selected_documents", []) or []
+        if str(doc).strip()
+    ]
 
     # Build a section-specific query, not a generic one.
     query_parts = [
@@ -260,10 +286,11 @@ def retrieve_for_section(
                 by_id[key] = chunk
         chunks = list(by_id.values())
 
-    if include_temenos_official:
+    if include_temenos_official and not selected_documents:
         temenos_chunks = temenos_official_chunks(query=query, top_k=max(2, top_k // 2))
         chunks = temenos_chunks + chunks
 
+    chunks = _filter_by_documents(chunks, selected_documents)
     chunks = _filter_context_mismatch(chunks, context, query)
 
     # Light re-rank: nudge chunks whose family matches.

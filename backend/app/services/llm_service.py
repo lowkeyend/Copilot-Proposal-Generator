@@ -15,6 +15,7 @@ from typing import Any, Optional
 import httpx
 
 from app.config import get_settings
+from app.services.runtime_settings_service import get_openrouter_api_key
 
 
 class LLMError(RuntimeError):
@@ -27,7 +28,7 @@ class LLMService:
 
     @property
     def available(self) -> bool:
-        return bool(self.settings.openrouter_api_key)
+        return bool(get_openrouter_api_key())
 
     def resolve_model(self, model: Optional[str]) -> str:
         if model and model in self.settings.supported_models:
@@ -49,8 +50,9 @@ class LLMService:
             )
 
         model_id = self.resolve_model(model)
+        api_key = get_openrouter_api_key()
         headers = {
-            "Authorization": f"Bearer {self.settings.openrouter_api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": self.settings.openrouter_app_url,
             "X-Title": self.settings.openrouter_app_name,

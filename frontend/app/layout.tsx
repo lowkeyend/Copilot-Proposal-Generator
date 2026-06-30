@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AppNav } from "@/components/AppNav";
 
 export const metadata: Metadata = {
   title: "Proposal Copilot",
@@ -14,7 +15,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen antialiased">{children}</body>
+      <body className="min-h-screen antialiased">
+        <AppNav />
+        {children}
+      </body>
     </html>
   );
 }
