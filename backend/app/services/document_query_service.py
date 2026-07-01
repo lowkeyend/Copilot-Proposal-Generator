@@ -612,7 +612,7 @@ def _filter_by_documents(
         ).lower()
         if any(name in haystack for name in wanted):
             filtered.append(chunk)
-    return filtered or chunks
+    return filtered
 
 
 def _lexical_rank(

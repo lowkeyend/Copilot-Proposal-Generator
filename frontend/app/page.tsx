@@ -308,7 +308,29 @@ export default function SetupPage() {
         template: tpl.suggested,
         model: store.model,
       });
+      const preservedContext = {
+        ...ctx.context,
+        canonical_product: Array.isArray(ctx.context.canonical_product)
+          ? ctx.context.canonical_product
+          : [ctx.context.canonical_product].filter(Boolean),
+        selected_documents: Array.isArray(ctx.context.selected_documents)
+          ? ctx.context.selected_documents
+          : [],
+      };
+      const preservedQuality = { ...store.quality };
+      const preservedModel = store.model;
+      const preservedPrompt = prompt;
+      const preservedFamily = ctx.proposal_family;
+      const preservedRationale = ctx.family_rationale;
+      const preservedTemplate = tpl.suggested;
       store.resetWorkspace();
+      store.setPrompt(preservedPrompt);
+      store.setModel(preservedModel);
+      store.setContext(preservedContext);
+      store.setProposalFamily(preservedFamily);
+      store.setFamilyRationale(preservedRationale);
+      store.setTemplate(preservedTemplate);
+      store.setQuality(preservedQuality);
       store.setToc(toc.toc);
 
       setPrompt("");
