@@ -112,6 +112,8 @@ export interface KnowledgeBaseStatus {
 
 export interface OpenRouterSettingsStatus {
   api_key_set: boolean;
+  gemini_api_key_set: boolean;
+  grok_api_key_set: boolean;
   source: "runtime" | "env" | "none";
   default_model: string;
   models: string[];
@@ -119,6 +121,8 @@ export interface OpenRouterSettingsStatus {
 
 export interface OpenRouterSettingsUpdate {
   api_key: string;
+  gemini_api_key?: string;
+  grok_api_key?: string;
   model?: string;
 }
 

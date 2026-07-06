@@ -351,7 +351,7 @@ def _curated_patterns() -> list[ProposalTemplate]:
 
 
 def _merge_curated(patterns: list[ProposalTemplate]) -> list[ProposalTemplate]:
-    curated = _curated_patterns()
+    curated = _curated_patterns() + _extra_curated_patterns()
     seen = {(t.name.lower(), t.proposal_family.lower()) for t in patterns}
     merged = list(patterns)
     for template in curated:
@@ -360,3 +360,56 @@ def _merge_curated(patterns: list[ProposalTemplate]) -> list[ProposalTemplate]:
             merged.append(template)
     merged.sort(key=lambda t: (t.support, t.proposal_family), reverse=True)
     return merged
+
+
+def _extra_curated_patterns() -> list[ProposalTemplate]:
+    return [
+        ProposalTemplate(
+            name="Upgrade + Technical",
+            proposal_family="Temenos",
+            origin="discovered",
+            support=0,
+            sections=[
+                TemplateSection(
+                    title="Company Profile",
+                    keywords=["client", "profile"],
+                    description="Summarise the client and operating context.",
+                ),
+                TemplateSection(
+                    title="Scope of Work",
+                    keywords=["scope", "work"],
+                    description="Define the scope, boundaries, and delivery responsibility.",
+                ),
+                TemplateSection(
+                    title="Solution",
+                    keywords=["solution", "architecture", "products"],
+                    description="Describe the proposed Temenos solution and platform stack.",
+                ),
+                TemplateSection(
+                    title="Methodology",
+                    keywords=["tim", "methodology", "approach"],
+                    description="Explain the delivery method, phases, and controls.",
+                ),
+                TemplateSection(
+                    title="Governance",
+                    keywords=["governance", "pmo", "steering"],
+                    description="Set out governance, reporting, and decision-making.",
+                ),
+                TemplateSection(
+                    title="Project Timeline",
+                    keywords=["timeline", "milestones", "phases"],
+                    description="Outline the delivery timeline and phase milestones.",
+                ),
+                TemplateSection(
+                    title="Training",
+                    keywords=["training", "handover", "enablement"],
+                    description="Describe training, knowledge transfer, and adoption support.",
+                ),
+                TemplateSection(
+                    title="Assumptions",
+                    keywords=["assumptions", "dependencies"],
+                    description="Record the assumptions and dependencies that frame the proposal.",
+                ),
+            ],
+        )
+    ]

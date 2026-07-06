@@ -431,11 +431,15 @@ class KnowledgeBaseStatus(BaseModel):
 
 class OpenRouterSettingsUpdate(BaseModel):
     api_key: str = ""
+    gemini_api_key: str = ""
+    grok_api_key: str = ""
     model: str = ""
 
 
 class OpenRouterSettingsStatus(BaseModel):
     api_key_set: bool = False
+    gemini_api_key_set: bool = False
+    grok_api_key_set: bool = False
     source: Literal["runtime", "env", "none"] = "none"
     default_model: str = "openrouter/free"
     models: list[str] = Field(default_factory=list)

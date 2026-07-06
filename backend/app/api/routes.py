@@ -61,6 +61,8 @@ from app.services.llm_service import LLMError, get_llm
 from app.services.qdrant_service import get_qdrant
 from app.services.planner_service import plan_next_steps
 from app.services.runtime_settings_service import (
+    get_gemini_api_key,
+    get_grok_api_key,
     get_openrouter_api_key,
     get_openrouter_key_source,
     save_runtime_settings,
@@ -94,6 +96,8 @@ def models() -> dict:
 def get_llm_settings() -> OpenRouterSettingsStatus:
     return OpenRouterSettingsStatus(
         api_key_set=bool(get_openrouter_api_key()),
+        gemini_api_key_set=bool(get_gemini_api_key()),
+        grok_api_key_set=bool(get_grok_api_key()),
         source=get_openrouter_key_source(),
         default_model=settings.preferred_default_model,
         models=settings.supported_models,
@@ -102,9 +106,15 @@ def get_llm_settings() -> OpenRouterSettingsStatus:
 
 @router.post("/settings/llm", response_model=OpenRouterSettingsStatus, tags=["meta"])
 def update_llm_settings(req: OpenRouterSettingsUpdate) -> OpenRouterSettingsStatus:
-    save_runtime_settings(req.api_key)
+    save_runtime_settings(
+        openrouter_api_key=req.api_key,
+        gemini_api_key=req.gemini_api_key,
+        grok_api_key=req.grok_api_key,
+    )
     return OpenRouterSettingsStatus(
         api_key_set=bool(get_openrouter_api_key()),
+        gemini_api_key_set=bool(get_gemini_api_key()),
+        grok_api_key_set=bool(get_grok_api_key()),
         source=get_openrouter_key_source(),
         default_model=settings.preferred_default_model,
         models=settings.supported_models,

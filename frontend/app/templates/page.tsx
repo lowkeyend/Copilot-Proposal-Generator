@@ -111,8 +111,8 @@ export default function TemplatesPage() {
           <div>
             <h1 className="text-lg font-bold">Template Management</h1>
             <p className="text-sm text-muted-foreground">
-              Patterns auto-discovered from your proposal corpus. Edit, clone, or
-              create your own.
+              TOC library presets auto-discovered from your proposal corpus. Edit, clone, or create
+              your own and then select them from the Start screen.
             </p>
           </div>
         </div>

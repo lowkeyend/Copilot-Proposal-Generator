@@ -1,8 +1,8 @@
 """Runtime settings persisted in storage.
 
 This lets the deployed app update non-secret operational values from the UI
-without rebuilding the backend image. The current use case is the OpenRouter
-API key, which the LLM service reads before falling back to environment vars.
+without rebuilding the backend image. The current use case is provider API
+keys, which the LLM service reads before falling back to environment vars.
 """
 
 from __future__ import annotations
@@ -45,8 +45,19 @@ def load_runtime_settings() -> dict[str, str]:
         return {}
 
 
-def save_runtime_settings(openrouter_api_key: str) -> dict[str, str]:
-    payload = {"openrouter_api_key": openrouter_api_key.strip()}
+def save_runtime_settings(
+    openrouter_api_key: str | None = None,
+    gemini_api_key: str | None = None,
+    grok_api_key: str | None = None,
+) -> dict[str, str]:
+    payload = load_runtime_settings()
+    if openrouter_api_key is not None:
+        payload["openrouter_api_key"] = openrouter_api_key.strip()
+    if gemini_api_key is not None:
+        payload["gemini_api_key"] = gemini_api_key.strip()
+    if grok_api_key is not None:
+        payload["grok_api_key"] = grok_api_key.strip()
+    payload = {k: v for k, v in payload.items() if str(v).strip()}
     path = _runtime_settings_path()
     with _lock:
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -70,6 +81,20 @@ def get_openrouter_key_source() -> str:
     if get_settings().openrouter_api_key.strip():
         return "env"
     return "none"
+
+
+def get_gemini_api_key() -> str:
+    runtime = load_runtime_settings().get("gemini_api_key", "").strip()
+    if runtime:
+        return runtime
+    return get_settings().gemini_api_key.strip()
+
+
+def get_grok_api_key() -> str:
+    runtime = load_runtime_settings().get("grok_api_key", "").strip()
+    if runtime:
+        return runtime
+    return get_settings().grok_api_key.strip()
 
 
 def get_openrouter_config_status() -> dict[str, str | bool]:

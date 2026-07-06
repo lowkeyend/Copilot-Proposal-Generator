@@ -753,6 +753,14 @@ def _retrieve_candidates(
             merged[key] = chunk
     ranked = _filter_by_documents(list(merged.values()), document_names)
     ranked.sort(key=lambda item: item.score, reverse=True)
+    if document_names and len(ranked) < max(top_k, 6):
+        targeted = _lexical_rank(query, payloads, document_names)
+        by_id = {chunk.chunk_id or f"{chunk.source_document}:{chunk.summary}:{chunk.text[:80]}": chunk for chunk in ranked}
+        for chunk in targeted:
+            key = chunk.chunk_id or f"{chunk.source_document}:{chunk.summary}:{chunk.text[:80]}"
+            if key not in by_id:
+                by_id[key] = chunk
+        ranked = sorted(by_id.values(), key=lambda item: item.score, reverse=True)
     return ranked[: max(top_k * 3, 18)]
 
 

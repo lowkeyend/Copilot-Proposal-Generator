@@ -58,11 +58,13 @@ def _lexical_fallback(
     keywords: list[str],
     proposal_family: str,
     top_k: int,
+    document_names: list[str] | None = None,
 ) -> list[EvidenceChunk]:
     query_terms = _token_list(" ".join([query, section_title, " ".join(keywords or [])]))
     if not query_terms:
         query_terms = _token_list(section_title)
     query_tokens = set(query_terms)
+    wanted = {name.strip().lower() for name in (document_names or []) if name.strip()}
 
     docs: list[tuple[dict[str, str], list[str], str]] = []
     for payload in qdrant.scroll_payloads(limit=5000):
@@ -70,15 +72,29 @@ def _lexical_fallback(
         text = norm["text"]
         if not text:
             continue
+        if wanted:
+            haystack = " ".join(
+                part
+                for part in (
+                    norm["text"],
+                    norm["section"],
+                    norm["source"],
+                    norm["document"],
+                    norm["family"],
+                )
+                if part
+            ).lower()
+            if not any(name in haystack for name in wanted):
+                continue
 
         haystack = " ".join(
             part
-            for part in (norm["text"], norm["section"], norm["source"], norm["family"])
+            for part in (norm["text"], norm["section"], norm["source"], norm["document"], norm["family"])
             if part
         ).lower()
         tokens = _tokens(haystack)
         overlap = len(query_tokens & tokens)
-        if overlap == 0:
+        if overlap == 0 and not wanted:
             continue
         docs.append(
             (
@@ -127,6 +143,8 @@ def _lexical_fallback(
             score += float(keyword_hits) * 0.75
         tim_hits = sum(1 for term in _TIM_TERMS if term in haystack)
         score += float(tim_hits) * 1.5
+        if wanted:
+            score += 2.0
 
         scored.append(
             (
@@ -137,6 +155,7 @@ def _lexical_fallback(
                     summary=" ".join(text.split()[:12]) + ("..." if len(text.split()) > 12 else ""),
                     source_proposal=norm["source"],
                     source_section=norm["section"],
+                    source_document=norm["document"],
                     proposal_family=norm["family"],
                     chunk_id=norm["point_id"],
                     source_type="document_bm25",
@@ -271,6 +290,7 @@ def retrieve_for_section(
             keywords=keywords,
             proposal_family=proposal_family,
             top_k=max(top_k, 10),
+            document_names=selected_documents,
         )
         by_id: dict[str, EvidenceChunk] = {}
         for chunk in chunks:
@@ -283,6 +303,26 @@ def retrieve_for_section(
                 existing.score = max(existing.score, chunk.score) + 0.35
                 existing.source_type = "document_hybrid"
             else:
+                by_id[key] = chunk
+        chunks = list(by_id.values())
+
+    if selected_documents and len(chunks) < max(3, min(top_k, 6)):
+        targeted = _lexical_fallback(
+            qdrant=qdrant,
+            query=query,
+            section_title=section_title,
+            keywords=keywords,
+            proposal_family=proposal_family,
+            top_k=max(top_k * 2, 12),
+            document_names=selected_documents,
+        )
+        by_id: dict[str, EvidenceChunk] = {
+            chunk.chunk_id or f"selected:{chunk.source_section}:{chunk.text[:80]}": chunk
+            for chunk in chunks
+        }
+        for chunk in targeted:
+            key = chunk.chunk_id or f"selected-bm25:{chunk.source_section}:{chunk.text[:80]}"
+            if key not in by_id:
                 by_id[key] = chunk
         chunks = list(by_id.values())
 

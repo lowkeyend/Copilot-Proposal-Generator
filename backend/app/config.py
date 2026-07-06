@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     openrouter_app_name: str = Field(
         default="Proposal Copilot", alias="OPENROUTER_APP_NAME"
     )
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    grok_api_key: str = Field(default="", alias="GROK_API_KEY")
 
     # ---- Qdrant ----
     qdrant_path: str = Field(default="../qdrant_local_db", alias="QDRANT_PATH")

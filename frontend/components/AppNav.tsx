@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const LINKS = [
   { href: "/", label: "Start" },
   { href: "/workspace", label: "Workspace" },
+  { href: "/templates", label: "Templates" },
   { href: "/knowledge-base", label: "Knowledge Base" },
   { href: "/docs-query", label: "Query from Doc" },
   { href: "/rfp-parser", label: "RFP Parser" },

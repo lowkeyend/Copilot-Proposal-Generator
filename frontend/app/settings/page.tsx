@@ -15,11 +15,15 @@ export default function SettingsPage() {
   const [models, setModels] = useState<string[]>([]);
   const [status, setStatus] = useState<{
     api_key_set: boolean;
+    gemini_api_key_set: boolean;
+    grok_api_key_set: boolean;
     source: "runtime" | "env" | "none";
     default_model: string;
     models: string[];
   } | null>(null);
   const [openrouterKey, setOpenrouterKey] = useState("");
+  const [geminiKey, setGeminiKey] = useState("");
+  const [grokKey, setGrokKey] = useState("");
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string>("");
@@ -29,6 +33,8 @@ export default function SettingsPage() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOpenrouterKey(window.localStorage.getItem("proposal-copilot-openrouter-key") || "");
+      setGeminiKey(window.localStorage.getItem("proposal-copilot-gemini-key") || "");
+      setGrokKey(window.localStorage.getItem("proposal-copilot-grok-key") || "");
     }
     api.models().then((m) => {
       setModels(m.models);
@@ -48,45 +54,59 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function persistKey(nextValue: string) {
-    const trimmed = nextValue.trim();
+  async function persistKeys(nextOpenRouter: string, nextGemini: string, nextGrok: string) {
+    const payload = {
+      api_key: nextOpenRouter.trim(),
+      gemini_api_key: nextGemini.trim(),
+      grok_api_key: nextGrok.trim(),
+    };
     if (typeof window !== "undefined") {
-      if (trimmed) {
-        window.localStorage.setItem("proposal-copilot-openrouter-key", trimmed);
-      } else {
-        window.localStorage.removeItem("proposal-copilot-openrouter-key");
-      }
+      if (payload.api_key) window.localStorage.setItem("proposal-copilot-openrouter-key", payload.api_key);
+      else window.localStorage.removeItem("proposal-copilot-openrouter-key");
+      if (payload.gemini_api_key) window.localStorage.setItem("proposal-copilot-gemini-key", payload.gemini_api_key);
+      else window.localStorage.removeItem("proposal-copilot-gemini-key");
+      if (payload.grok_api_key) window.localStorage.setItem("proposal-copilot-grok-key", payload.grok_api_key);
+      else window.localStorage.removeItem("proposal-copilot-grok-key");
     }
-    return api.saveOpenRouterSettings({ api_key: trimmed });
+    return api.saveOpenRouterSettings(payload);
   }
 
   async function handleSave() {
     setSaving(true);
     setError("");
     try {
-      const updated = await persistKey(openrouterKey);
+      const updated = await persistKeys(openrouterKey, geminiKey, grokKey);
       setStatus(updated);
-      setMessage(updated.api_key_set ? "OpenRouter key saved." : "OpenRouter key cleared.");
-      setDetail(`Source: ${updated.source}. Default model: ${updated.default_model}.`);
+      setMessage("LLM keys saved.");
+      setDetail(
+        [
+          `OpenRouter: ${updated.api_key_set ? "saved" : "empty"}.`,
+          `Gemini: ${updated.gemini_api_key_set ? "saved" : "empty"}.`,
+          `Grok: ${updated.grok_api_key_set ? "saved" : "empty"}.`,
+          `Source: ${updated.source}. Default model: ${updated.default_model}.`,
+        ].join(" ")
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save OpenRouter settings.");
+      setError(err instanceof Error ? err.message : "Failed to save LLM settings.");
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleCheck() {
+  async function handleCheck(apiKey = openrouterKey) {
     setChecking(true);
     setError("");
     setMessage("");
     setDetail("");
     try {
-      const trimmed = openrouterKey.trim();
+      const trimmed = apiKey.trim();
       const result = await api.checkOpenRouterSettings({ api_key: trimmed, model: store.model });
       setMessage(result.ok ? result.message : result.message || "OpenRouter check failed.");
       setDetail(result.detail || `Model checked: ${result.model}.`);
       setStatus({
         api_key_set: result.ok,
+        gemini_api_key_set: Boolean(geminiKey.trim()),
+        grok_api_key_set: Boolean(grokKey.trim()),
         source: result.source === "request" ? "runtime" : result.source,
         default_model: result.model || "openrouter/free",
         models: models.length ? models : [result.model].filter(Boolean),
@@ -103,19 +123,21 @@ export default function SettingsPage() {
     setChecking(true);
     setError("");
     try {
-      const updated = await persistKey(openrouterKey);
+      const updated = await persistKeys(openrouterKey, geminiKey, grokKey);
       setStatus(updated);
       const result = await api.checkOpenRouterSettings({ api_key: openrouterKey.trim(), model: store.model });
       setMessage(result.ok ? result.message : result.message || "OpenRouter check failed.");
       setDetail(result.detail || `Source: ${updated.source}.`);
       setStatus({
         api_key_set: result.ok,
+        gemini_api_key_set: Boolean(geminiKey.trim()),
+        grok_api_key_set: Boolean(grokKey.trim()),
         source: updated.source,
         default_model: updated.default_model,
         models: updated.models.length ? updated.models : models,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save and check OpenRouter settings.");
+      setError(err instanceof Error ? err.message : "Failed to save and check LLM settings.");
     } finally {
       setSaving(false);
       setChecking(false);
@@ -131,9 +153,9 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Configure the OpenRouter key once and reuse it for generation, docs queries, RFP parsing,
-            and planner flows. The key is stored in your browser and also saved on the backend runtime
-            when you click save.
+            Configure provider keys once and reuse them for generation, docs queries, RFP parsing,
+            and planner flows. OpenRouter is checked for live generation today; Gemini and Grok are
+            stored alongside it for use in the same workspace.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -163,16 +185,37 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>OpenRouter API Key</Label>
-              <Input
-                type="password"
-                value={openrouterKey}
-                onChange={(e) => setOpenrouterKey(e.target.value)}
-                placeholder="sk-or-v1-..."
-              />
-            </div>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>OpenRouter API Key</Label>
+                <Input
+                  type="password"
+                  value={openrouterKey}
+                  onChange={(e) => setOpenrouterKey(e.target.value)}
+                  placeholder="sk-or-v1-..."
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Gemini API Key</Label>
+                  <Input
+                    type="password"
+                    value={geminiKey}
+                    onChange={(e) => setGeminiKey(e.target.value)}
+                    placeholder="Gemini key"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Grok API Key</Label>
+                  <Input
+                    type="password"
+                    value={grokKey}
+                    onChange={(e) => setGrokKey(e.target.value)}
+                    placeholder="Grok key"
+                  />
+                </div>
+              </div>
 
             <div className="space-y-2">
               <Label>Preferred model</Label>
@@ -198,9 +241,11 @@ export default function SettingsPage() {
                 variant="outline"
                 onClick={() => {
                   setOpenrouterKey("");
+                  setGeminiKey("");
+                  setGrokKey("");
                   void (async () => {
-                    await persistKey("");
-                    await handleCheck();
+                    await persistKeys("", "", "");
+                    await handleCheck("");
                   })();
                 }}
                 disabled={saving || checking}
@@ -220,6 +265,12 @@ export default function SettingsPage() {
                 {detail ? <div className="mt-1 text-muted-foreground">{detail}</div> : null}
               </div>
             ) : null}
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <KeyStatus label="OpenRouter" active={Boolean(status?.api_key_set)} />
+              <KeyStatus label="Gemini" active={Boolean(status?.gemini_api_key_set)} />
+              <KeyStatus label="Grok" active={Boolean(status?.grok_api_key_set)} />
+            </div>
           </div>
         </section>
 
@@ -245,11 +296,22 @@ export default function SettingsPage() {
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>Browser localStorage keeps the key across page refreshes.</li>
               <li>The backend also stores a runtime copy when you save.</li>
-              <li>All generation requests send the key in a header when available.</li>
+              <li>OpenRouter requests send the key in a header when available.</li>
             </ul>
           </section>
         </aside>
       </div>
     </main>
+  );
+}
+
+function KeyStatus({ label, active }: { label: string; active: boolean }) {
+  return (
+    <div className="rounded-2xl border border-border bg-background px-3 py-3 text-sm">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className={active ? "mt-1 font-medium text-foreground" : "mt-1 font-medium text-muted-foreground"}>
+        {active ? "Saved" : "Empty"}
+      </div>
+    </div>
   );
 }

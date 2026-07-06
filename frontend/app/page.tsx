@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, Database, FileText, Upload, Wand2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useProposalStore } from "@/lib/store";
-import type { ClientContext, IntakeProfile } from "@/lib/types";
+import type { ClientContext, IntakeProfile, ProposalTemplate } from "@/lib/types";
 import {
   CONTAINER_OPTIONS,
   DATABASE_OPTIONS,
@@ -142,6 +142,7 @@ export default function SetupPage() {
   const [context, setContext] = useState({ ...EMPTY_SETUP_CONTEXT });
   const [models, setModels] = useState<string[]>([]);
   const [knowledgeDocuments, setKnowledgeDocuments] = useState<string[]>([]);
+  const [templates, setTemplates] = useState<ProposalTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState("");
   const [error, setError] = useState("");
@@ -205,6 +206,23 @@ export default function SetupPage() {
         setKnowledgeDocuments(docs);
       })
       .catch(() => setKnowledgeDocuments([]));
+  }, []);
+
+  useEffect(() => {
+    api
+      .listTemplates()
+      .then((res) => {
+        const all = [...res.user, ...res.discovered].sort((a, b) =>
+          `${a.proposal_family} ${a.name}`.localeCompare(`${b.proposal_family} ${b.name}`)
+        );
+        setTemplates(all);
+        if (store.template) {
+          const match = all.find((template) => template.id === store.template?.id);
+          if (match) store.setTemplate(match);
+        }
+      })
+      .catch(() => setTemplates([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -291,21 +309,25 @@ export default function SetupPage() {
       store.setProposalFamily(ctx.proposal_family);
       store.setFamilyRationale(ctx.family_rationale);
 
-      setStage("Selecting a corpus pattern...");
-      const tpl = await api.suggestTemplate({
-        prompt,
-        context: ctx.context,
-        proposal_family: ctx.proposal_family,
-        model: store.model,
-      });
-      store.setTemplate(tpl.suggested);
+      const selectedTemplate = store.template;
+      const templateToUse =
+        selectedTemplate ??
+        (
+          await api.suggestTemplate({
+            prompt,
+            context: ctx.context,
+            proposal_family: ctx.proposal_family,
+            model: store.model,
+          })
+        ).suggested;
+      store.setTemplate(templateToUse);
 
       setStage("Building the TOC...");
       const toc = await api.buildToc({
         prompt,
         context: ctx.context,
         proposal_family: ctx.proposal_family,
-        template: tpl.suggested,
+        template: templateToUse,
         model: store.model,
       });
       const preservedContext = {
@@ -322,7 +344,7 @@ export default function SetupPage() {
       const preservedPrompt = prompt;
       const preservedFamily = ctx.proposal_family;
       const preservedRationale = ctx.family_rationale;
-      const preservedTemplate = tpl.suggested;
+      const preservedTemplate = templateToUse;
       store.resetWorkspace();
       store.setPrompt(preservedPrompt);
       store.setModel(preservedModel);
@@ -399,17 +421,71 @@ export default function SetupPage() {
                 placeholder="Banking"
               />
             </div>
-            <div className="space-y-2 md:col-span-2">
-              <DropdownMultiSelect
-                label="Canonical Product"
-                options={TEMENOS_PRODUCT_OPTIONS}
-                value={context.canonical_product}
-                onChange={(next) => updateContext({ canonical_product: next })}
-                placeholder="Add canonical product"
-                helper="Select one or more canonical Temenos products to guide wording and scope."
-              />
-            </div>
           </div>
+
+          <SectionShell
+            title="Table of Contents Template"
+            subtitle="Choose a named outline before generation. If you skip this, the app will suggest one from the corpus."
+          >
+            <div className="space-y-3">
+              <div className="grid gap-3 md:grid-cols-[1.3fr_0.7fr]">
+                <div className="space-y-2">
+                  <Label>Template Library</Label>
+                  <Select
+                    value={store.template?.id || ""}
+                    onChange={(e) => {
+                      const selected = templates.find((template) => template.id === e.target.value);
+                      store.setTemplate(selected || null);
+                    }}
+                  >
+                    <option value="">Auto-suggest template</option>
+                    {templates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.proposal_family ? `[${template.proposal_family}] ` : ""}
+                        {template.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Selected Template</Label>
+                  <div className="rounded-2xl border border-border bg-muted/30 px-4 py-3 text-sm">
+                    <div className="font-medium">
+                      {store.template?.name || "Auto-suggest"}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {store.template?.sections?.length
+                        ? `${store.template.sections.length} sections`
+                        : "The best matching template will be suggested during generation."}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {store.template?.sections?.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {store.template.sections.map((section) => (
+                    <span
+                      key={section.title}
+                      className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground"
+                    >
+                      {section.title}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </SectionShell>
+
+          <SectionShell title="Canonical Product" subtitle="Pick the product family that should guide the proposal language.">
+            <DropdownMultiSelect
+              label="Canonical Product"
+              options={TEMENOS_PRODUCT_OPTIONS}
+              value={context.canonical_product}
+              onChange={(next) => updateContext({ canonical_product: next })}
+              placeholder="Add canonical product"
+              helper="Select one or more canonical Temenos products to guide wording and scope."
+            />
+          </SectionShell>
 
           <SectionShell
             title="Engagement Mode"
