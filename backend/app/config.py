@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     proposal_template_file: str = Field(
         default="master_proposal_template.docx", alias="PROPOSAL_TEMPLATE_FILE"
     )
+    proposal_template_url: str = Field(
+        default=(
+            "https://raw.githubusercontent.com/lowkeyend/"
+            "Copilot-Proposal-Generator/main/templates/master_proposal_template.docx"
+        ),
+        alias="PROPOSAL_TEMPLATE_URL",
+    )
 
     # ---- Server ----
     host: str = Field(default="0.0.0.0", alias="HOST")

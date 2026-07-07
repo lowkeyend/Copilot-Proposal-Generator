@@ -12,6 +12,7 @@ python-docx doesn't expose directly.
 from __future__ import annotations
 
 import re
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -93,7 +94,7 @@ class DocxComposer:
         sections: list[SectionResult],
         proposal_id: Optional[str] = None,
     ) -> Path:
-        template_path = self.settings.proposal_template_path
+        template_path = self._ensure_template()
         if template_path.exists():
             doc = Document(str(template_path))
             self._fill_template_metadata(doc, title, context)
@@ -113,6 +114,21 @@ class DocxComposer:
         out_path = self.settings.generated_path / filename
         doc.save(str(out_path))
         return out_path
+
+    def _ensure_template(self) -> Path:
+        template_path = self.settings.proposal_template_path
+        if template_path.exists():
+            return template_path
+        template_url = self.settings.proposal_template_url.strip()
+        if not template_url:
+            return template_path
+        template_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with urllib.request.urlopen(template_url, timeout=20) as response:
+                template_path.write_bytes(response.read())
+        except Exception:
+            return template_path
+        return template_path
 
     # ------------------------------------------------------------------
     def _configure_styles(self, doc: Document) -> None:
