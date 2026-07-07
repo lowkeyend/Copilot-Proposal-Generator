@@ -171,3 +171,77 @@ def test_selected_document_retrieval_matches_without_extension(monkeypatch) -> N
 
     assert chunks
     assert all("Alkuraimibank" in chunk.source_document for chunk in chunks)
+
+
+def test_scope_retrieval_prefers_scope_headings(monkeypatch) -> None:
+    class FakeQdrant:
+        def search_text(self, query_text: str, model: str, top_k: int = 6):
+            return []
+
+        def search(self, query_vector, top_k: int = 6, keywords=None):
+            return []
+
+        def scroll_payloads(self, limit: int = 5000):
+            return [
+                {
+                    "text": "Upgrading to the latest release enables improved performance and enhanced architecture.",
+                    "section": "Proprietary Notice",
+                    "source": "Alkuraimibank - Core Banking Upgrade(1).docx",
+                    "family": "Uploaded Knowledge",
+                    "document_name": "Alkuraimibank - Core Banking Upgrade(1).docx",
+                    "_point_id": "bad-1",
+                },
+                {
+                    "text": "The scope includes environment readiness assessment.",
+                    "section": "Environment Readiness Assessment",
+                    "source": "Alkuraimibank - Core Banking Upgrade(1).docx",
+                    "family": "Uploaded Knowledge",
+                    "document_name": "Alkuraimibank - Core Banking Upgrade(1).docx",
+                    "_point_id": "good-1",
+                },
+                {
+                    "text": "The scope includes upgrade analysis and technical uplift.",
+                    "section": "Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ",
+                    "source": "Alkuraimibank - Core Banking Upgrade(1).docx",
+                    "family": "Uploaded Knowledge",
+                    "document_name": "Alkuraimibank - Core Banking Upgrade(1).docx",
+                    "_point_id": "good-2",
+                },
+            ]
+
+        @staticmethod
+        def normalize_payload(payload):
+            return {
+                "text": payload["text"],
+                "source": payload["source"],
+                "document": payload.get("document_name", ""),
+                "section": payload["section"],
+                "family": payload["family"],
+            }
+
+    fake_settings = SimpleNamespace(embedding_provider="qdrant", embedding_model="dummy")
+    fake_context = ClientContext(
+        client_name="Bank ABC",
+        industry="Banking",
+        client_profile="established",
+        canonical_product="Temenos Transact",
+        selected_documents=["Alkuraimibank - Core Banking Upgrade(1).docx"],
+        intake=IntakeProfile(),
+    )
+
+    monkeypatch.setattr("app.agents.retrieval_agent.get_qdrant", lambda: FakeQdrant())
+    monkeypatch.setattr("app.agents.retrieval_agent.get_settings", lambda: fake_settings)
+
+    chunks = retrieve_for_section(
+        section_title="Scope of Work",
+        keywords=["scope", "upgrade", "testing", "cutover"],
+        context=fake_context,
+        proposal_family="Temenos",
+        top_k=6,
+        include_temenos_official=False,
+        use_hybrid_retrieval=True,
+    )
+
+    assert chunks
+    assert all(chunk.source_section != "Proprietary Notice" for chunk in chunks)
+    assert any(chunk.source_section == "Environment Readiness Assessment" for chunk in chunks)

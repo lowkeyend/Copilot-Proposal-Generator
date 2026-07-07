@@ -150,6 +150,8 @@ def _section_style_guide(req: GenerateSectionRequest) -> str:
     if title == "scope of work":
         return (
             "- Write in a contractual implementation style, not a consulting style.\n"
+            "- Preserve the source section structure where supported, including specific workstream headings and activity lists.\n"
+            "- Do not regroup the scope into invented milestone buckets unless those exact buckets appear in the evidence.\n"
             "- State the work packages, activities, boundaries, deliverables, testing scope, deployment scope, and out-of-scope items only where supported.\n"
             "- Prefer procedural and activity-based wording such as assessment, installation, retrofit, validation, reconciliation, testing, cutover, and post-go-live support.\n"
             "- Do not add business benefits, strategic outcomes, governance commentary, or generalized platform advantages."
@@ -895,7 +897,7 @@ def _clean_model_output(text: str, section_title: str) -> str:
     cleaned = re.sub(r"```(?:markdown|md|text)?", "", cleaned, flags=re.IGNORECASE)
     cleaned = cleaned.replace("```", "").strip()
     cleaned = cleaned.replace("<section>", "").replace("</section>", "")
-    cleaned = re.sub(r"</?(?:title|paragraph|h1|h2|h3|body|html|xml|div|span|p)\b[^>]*>", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"</?(?:title|paragraph|h1|h2|h3|body|html|xml|div|span|p|ul|ol|li|br)\b[^>]*>", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\{\{[^}]+\}\}", "", cleaned)
     cleaned = re.sub(r"(?im)^\s*traceback \(most recent call last\):\s*$", "", cleaned)
     cleaned = re.sub(r"(?im)^\s*file \".*?\", line \d+.*$", "", cleaned)
@@ -925,7 +927,7 @@ def _validation_issues(
         issues.append("output contains commentary or instruction-style language")
     if "<section>" in lowered or "</section>" in lowered:
         issues.append("output contains raw section tags")
-    if re.search(r"</?(?:title|paragraph|h1|h2|h3|body|html|xml|div|span|p)\b", lowered):
+    if re.search(r"</?(?:title|paragraph|h1|h2|h3|body|html|xml|div|span|p|ul|ol|li|br)\b", lowered):
         issues.append("output contains leaked markup tags")
     if "traceback (most recent call last)" in lowered:
         issues.append("output contains traceback text")

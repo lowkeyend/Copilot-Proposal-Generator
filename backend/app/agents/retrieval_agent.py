@@ -92,6 +92,10 @@ _SECTION_ALIASES: dict[str, list[str]] = {
 }
 
 
+def _normalize_heading(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+
+
 def _tokens(text: str) -> set[str]:
     return {t for t in re.findall(r"[a-z0-9]+", text.lower()) if len(t) > 2}
 
@@ -122,6 +126,21 @@ def _section_alias_terms(section_title: str) -> list[str]:
     if not aliases:
         return []
     return aliases
+
+
+def _strict_section_filter(section_title: str, chunks: list[EvidenceChunk]) -> list[EvidenceChunk]:
+    aliases = _section_alias_terms(section_title)
+    if not aliases:
+        return chunks
+    allowed = {_normalize_heading(section_title), *(_normalize_heading(alias) for alias in aliases)}
+    matched: list[EvidenceChunk] = []
+    for chunk in chunks:
+        heading = _normalize_heading(chunk.source_section or "")
+        if not heading:
+            continue
+        if any(item and (item in heading or heading in item) for item in allowed):
+            matched.append(chunk)
+    return matched or chunks
 
 
 def _lexical_fallback(
@@ -410,6 +429,7 @@ def retrieve_for_section(
 
     chunks = _filter_by_documents(chunks, selected_documents)
     chunks = _filter_context_mismatch(chunks, context, query)
+    chunks = _strict_section_filter(section_title, chunks)
 
     # Light re-rank: nudge chunks whose family matches.
     if proposal_family:
