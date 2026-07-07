@@ -82,6 +82,11 @@ def _paragraph_after(paragraph, style: str | None = None) -> Paragraph:
     return created
 
 
+def _element_has_visual(element) -> bool:
+    xml = element.xml if hasattr(element, "xml") else ""
+    return any(marker in xml for marker in ("w:drawing", "w:pict", "pic:pic", "v:shape"))
+
+
 class DocxComposer:
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -339,7 +344,14 @@ class DocxComposer:
                     next_level = self._paragraph_heading_level(paragraph)
                     if next_level <= current_level:
                         break
-            removable.append(cursor)
+                if not _element_has_visual(cursor):
+                    removable.append(cursor)
+            elif cursor.tag.endswith("}tbl"):
+                if not _element_has_visual(cursor):
+                    removable.append(cursor)
+            else:
+                if not _element_has_visual(cursor):
+                    removable.append(cursor)
             cursor = next_cursor
 
         for element in removable:

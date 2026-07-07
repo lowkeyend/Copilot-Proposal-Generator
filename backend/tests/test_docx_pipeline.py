@@ -61,3 +61,19 @@ def test_reference_heading_replacement_uses_matching_heading() -> None:
     assert "New grounded summary." in text
     assert "Old summary" not in text
     assert "Static profile" in text
+
+
+def test_reference_heading_replacement_preserves_visual_paragraphs() -> None:
+    doc = Document()
+    heading = doc.add_heading("Scope of Work", level=1)
+    doc.add_paragraph("Old scope text")
+    visual = doc.add_paragraph("")
+    visual._element.append(visual._element.makeelement("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing"))
+    doc.add_heading("Project Timeline", level=1)
+
+    composer = DocxComposer()
+    composer._replace_heading_section(doc, heading, "New scope text")
+
+    text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    assert "New scope text" in text
+    assert "Old scope text" not in text

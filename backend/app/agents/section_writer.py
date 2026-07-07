@@ -72,6 +72,73 @@ _CONSULTING_PHRASES = (
     "operating model",
     "target state",
 )
+_REFERENCE_SECTION_SCHEMAS: dict[str, dict[str, object]] = {
+    "scope of work": {
+        "subheadings": [
+            "Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ",
+            "Environment Readiness Assessment",
+            "Upgrade Analysis",
+            "Core Technical Upgrade",
+            "Customization & Interface Retrofit",
+            "Testing",
+            "Deployment & Go-Live",
+            "Post Go-Live Support",
+        ],
+        "minimum_matches": 4,
+    },
+    "proposed solution": {
+        "subheadings": [
+            "Target Solution Principles",
+            "Upgrade Approach",
+            "Environment Assessment",
+            "Upgrade Execution",
+            "Customization Retrofit",
+            "Testing & Validation",
+            "Cutover & Stabilization",
+        ],
+        "minimum_matches": 4,
+    },
+    "upgrade methodology": {
+        "subheadings": [
+            "General Upgrade Activities",
+            "Stage 1: Project Initiation",
+            "Review of SOW",
+            "Runbook Template",
+            "Hardware Sizing",
+            "Analysis Utility Setup",
+            "Stage 2: Project Planning",
+            "Stage 3: Upgrade Analysis",
+            "Data Integrity Health Check",
+            "Identify local jobs and CORE Batches",
+            "Stage 4: Technical Upgrade",
+            "Perform Core Upgrade",
+            "GL Reconciliation",
+            "Stage 5: Unit testing in integrated environment before delivery to client",
+            "Stage 6: Upgrade Training",
+            "Pre-UAT Training",
+            "Stage 7: System Integration Testing",
+            "Stage 8: User Acceptance Testing",
+            "Stage 9: Mock Upgrade and Dress Rehearsals",
+            "Stage 10: Pre-GO LIVE",
+            "Stage 11: GO LIVE",
+            "Stage 12: Post GO LIVE Support",
+            "Planning and Control",
+        ],
+        "minimum_matches": 6,
+    },
+    "project governance": {
+        "subheadings": [
+            "Communication Plan",
+            "Quality Management",
+            "Change Management",
+            "Project Issue Escalation Management",
+            "Review Board",
+            "Steering Committee",
+            "Governance Model",
+        ],
+        "minimum_matches": 4,
+    },
+}
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -203,6 +270,20 @@ def _section_boundary_rules(req: GenerateSectionRequest) -> str:
             "- Focus on stages, activities, checkpoints, testing, reviews, and transition tasks."
         )
     return "- Exclude content that belongs to other sections unless the evidence explicitly places it here."
+
+
+def _reference_section_schema(req: GenerateSectionRequest) -> str:
+    schema = _REFERENCE_SECTION_SCHEMAS.get((req.section_title or "").strip().lower())
+    if not schema:
+        return "No fixed reference subheading schema is enforced for this section."
+    subheadings = schema.get("subheadings", [])
+    if not subheadings:
+        return "No fixed reference subheading schema is enforced for this section."
+    return (
+        "Mirror the reference proposal section structure where the evidence supports it. "
+        "Use these subheadings in the same spirit and sequence, omitting only those with no support:\n- "
+        + "\n- ".join(str(item) for item in subheadings)
+    )
 
 def _extract_fact_sentence(sentence: str, section_keywords: list[str]) -> str | None:
     sentence = _clean_phrase(sentence)
@@ -492,6 +573,8 @@ QUALITY CONTROLS
 {section_style}
 - Section boundary rules:
 {section_boundaries}
+- Reference section schema:
+{reference_schema}
 - The EVIDENCE FACTS block is the only source of truth for section claims.
 - Do not use the raw evidence excerpts to invent new claims; distill them only
   into the facts shown above.
@@ -530,6 +613,7 @@ the section body. Match a formal proposal style:
   percentages unless those exact details appear in the evidence;
 - avoid generic marketing language, benefits language, and vague claims;
 - do not rewrite procedural source material into advisory or consulting prose.
+- do not emit HTML or XML tags such as ul, li, p, div, or span.
 
 Target {length} of well-structured content. Treat the lower bound as the
 minimum acceptable depth unless the retrieved evidence is genuinely sparse.
@@ -897,6 +981,10 @@ def _clean_model_output(text: str, section_title: str) -> str:
     cleaned = re.sub(r"```(?:markdown|md|text)?", "", cleaned, flags=re.IGNORECASE)
     cleaned = cleaned.replace("```", "").strip()
     cleaned = cleaned.replace("<section>", "").replace("</section>", "")
+    cleaned = re.sub(r"(?is)<li\b[^>]*>\s*", "\n- ", cleaned)
+    cleaned = re.sub(r"(?is)</li\s*>", "\n", cleaned)
+    cleaned = re.sub(r"(?is)<br\s*/?>", "\n", cleaned)
+    cleaned = re.sub(r"(?is)</?(?:ul|ol)\b[^>]*>", "\n", cleaned)
     cleaned = re.sub(r"</?(?:title|paragraph|h1|h2|h3|body|html|xml|div|span|p|ul|ol|li|br)\b[^>]*>", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\{\{[^}]+\}\}", "", cleaned)
     cleaned = re.sub(r"(?im)^\s*traceback \(most recent call last\):\s*$", "", cleaned)
@@ -1002,6 +1090,15 @@ def _validation_issues(
         for phrase in forbidden:
             if phrase in lowered and phrase not in evidence_text:
                 issues.append(f"scope section contains cross-section leakage: {phrase}")
+    schema = _REFERENCE_SECTION_SCHEMAS.get((req.section_title or "").strip().lower())
+    if schema:
+        subheadings = [str(item) for item in schema.get("subheadings", [])]
+        minimum_matches = int(schema.get("minimum_matches", 0) or 0)
+        heading_matches = sum(1 for heading in subheadings if heading.lower() in lowered)
+        if minimum_matches and heading_matches < minimum_matches:
+            issues.append(
+                f"output does not follow the reference section structure closely enough ({heading_matches}/{minimum_matches} headings found)"
+            )
     return issues
 
 
@@ -1089,6 +1186,7 @@ async def _generate_via_llm(
                     include_temenos="yes" if req.include_temenos_official else "no",
                     section_style=_section_style_guide(req),
                     section_boundaries=_section_boundary_rules(req),
+                    reference_schema=_reference_section_schema(req),
                     length=length,
                 ),
             },

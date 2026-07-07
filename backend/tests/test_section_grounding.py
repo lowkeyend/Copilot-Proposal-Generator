@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.agents.section_writer import _prune_unsupported_sentences, _validation_issues
+from app.agents.section_writer import _clean_model_output, _prune_unsupported_sentences, _validation_issues
 from app.models.schemas import ClientContext, EvidenceChunk, GenerateSectionRequest, IntakeProfile
 
 
@@ -103,3 +103,36 @@ def test_validation_rejects_unsupported_consulting_benefits() -> None:
     issues = _validation_issues(content, req, evidence)
 
     assert any("improved performance" in issue for issue in issues)
+
+
+def test_clean_model_output_converts_html_lists_to_bullets() -> None:
+    cleaned = _clean_model_output(
+        "<section><ul><li>Environment Readiness Assessment</li><li>Upgrade Analysis</li></ul></section>",
+        "Scope of Work",
+    )
+
+    assert "<li>" not in cleaned.lower()
+    assert "- Environment Readiness Assessment" in cleaned
+
+
+def test_scope_validation_requires_reference_structure() -> None:
+    req = _request()
+    evidence = [
+        EvidenceChunk(
+            text=(
+                "Environment Readiness Assessment. Upgrade Analysis. Core Technical Upgrade. "
+                "Customization & Interface Retrofit. Testing. Deployment & Go-Live. Post Go-Live Support."
+            ),
+            score=1.0,
+            summary="Scope structure",
+            source_section="Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ",
+            source_document="Alkuraimi.docx",
+            source_proposal="Alkuraimi.docx",
+            proposal_family="Temenos",
+        )
+    ]
+    content = "The engagement will proceed through a generic implementation approach with phased delivery."
+
+    issues = _validation_issues(content, req, evidence)
+
+    assert any("reference section structure" in issue for issue in issues)
