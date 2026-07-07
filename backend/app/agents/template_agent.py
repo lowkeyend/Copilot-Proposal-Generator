@@ -15,7 +15,11 @@ from app.models.schemas import (
     SuggestTemplateRequest,
     SuggestTemplateResponse,
 )
-from app.agents.pattern_discovery import load_registry, pattern_for_family
+from app.agents.pattern_discovery import (
+    load_registry,
+    pattern_for_family,
+    technical_upgrade_template,
+)
 from app.services.storage_service import get_storage
 
 
@@ -26,6 +30,7 @@ def run_template_agent(req: SuggestTemplateRequest) -> SuggestTemplateResponse:
 
     primary = pattern_for_family(req.proposal_family)
     contextual = _contextual_match(req.context, catalogue)
+    canonical_upgrade = _canonical_upgrade(req.context)
 
     # Prefer a user template for the family if one exists, then a contextual
     # match that mirrors the intake, then the learned family pattern.
@@ -35,6 +40,7 @@ def run_template_agent(req: SuggestTemplateRequest) -> SuggestTemplateResponse:
     )
     suggested = (
         user_match
+        or canonical_upgrade
         or contextual
         or primary
         or (catalogue[0] if catalogue else _empty(req.proposal_family))
@@ -99,3 +105,11 @@ def _contextual_match(context: ClientContext, catalogue: list[ProposalTemplate])
     if best is None:
         return None
     return best
+
+
+def _canonical_upgrade(context: ClientContext) -> ProposalTemplate | None:
+    project_mode = (context.intake.project_mode or "implementation").lower()
+    upgrade_type = (context.intake.upgrade_type or "unknown").lower()
+    if project_mode == "upgrade" and upgrade_type == "technical":
+        return technical_upgrade_template()
+    return None

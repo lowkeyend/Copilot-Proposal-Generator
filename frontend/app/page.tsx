@@ -216,10 +216,10 @@ export default function SetupPage() {
           `${a.proposal_family} ${a.name}`.localeCompare(`${b.proposal_family} ${b.name}`)
         );
         setTemplates(all);
-        if (store.template) {
-          const match = all.find((template) => template.id === store.template?.id);
-          if (match) store.setTemplate(match);
-        }
+        const selected = store.template
+          ? all.find((template) => template.id === store.template?.id) || all[0] || null
+          : all[0] || null;
+        store.setTemplate(selected);
       })
       .catch(() => setTemplates([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps

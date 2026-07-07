@@ -53,6 +53,7 @@ from app.agents.pattern_discovery import discover_patterns, load_registry
 from app.agents.section_writer import run_section_writer
 from app.agents.template_agent import run_template_agent
 from app.agents.toc_agent import run_toc_agent
+from app.agents.pattern_discovery import technical_upgrade_template
 
 from app.services.document_query_service import answer_document_query
 from app.services.docx_service import get_composer
@@ -431,12 +432,10 @@ def download(filename: str) -> FileResponse:
 # --------------------------------------------------------------------------
 @router.get("/templates", tags=["templates"])
 def list_templates() -> dict:
-    storage = get_storage()
-    user_templates = storage.load_templates()
-    discovered = load_registry()
+    template = technical_upgrade_template()
     return {
-        "user": [t.model_dump() for t in user_templates],
-        "discovered": [t.model_dump() for t in discovered],
+        "user": [],
+        "discovered": [template.model_dump()],
     }
 
 

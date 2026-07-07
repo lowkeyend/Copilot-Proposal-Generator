@@ -219,6 +219,11 @@ def pattern_for_family(family: str) -> ProposalTemplate | None:
     return None
 
 
+def technical_upgrade_template() -> ProposalTemplate:
+    templates = _extra_curated_patterns()
+    return templates[0]
+
+
 # --------------------------------------------------------------------------
 def _seed_patterns() -> list[ProposalTemplate]:
     """Fallback skeletons used only when the corpus is empty."""
@@ -365,7 +370,7 @@ def _merge_curated(patterns: list[ProposalTemplate]) -> list[ProposalTemplate]:
 def _extra_curated_patterns() -> list[ProposalTemplate]:
     return [
         ProposalTemplate(
-            name="Upgrade + Technical",
+            name="Technical Upgrade",
             proposal_family="Temenos",
             origin="discovered",
             support=0,

@@ -141,6 +141,15 @@ def _fallback_outline(context) -> list[TocSection]:
 async def run_toc_agent(req: BuildTocRequest) -> list[TocSection]:
     template = req.template or pattern_for_family(req.proposal_family)
     skeleton_sections = template.sections if template else []
+    if template and skeleton_sections:
+        return [
+            TocSection(
+                title=s.title,
+                keywords=s.keywords,
+                description=s.description,
+            )
+            for s in skeleton_sections
+        ]
     if not skeleton_sections:
         skeleton_sections = _fallback_outline(req.context)
     skeleton_str = (
