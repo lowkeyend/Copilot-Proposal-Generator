@@ -27,6 +27,7 @@ from app.models.schemas import ClientContext, SectionResult
 
 BRAND = RGBColor(0x1F, 0x3A, 0x5F)  # deep navy
 ACCENT = RGBColor(0x2E, 0x6F, 0x8E)
+BODY_FONT = "Century Gothic"
 
 
 def _set_cell_text(cell, text: str, bold: bool = False) -> None:
@@ -84,21 +85,30 @@ class DocxComposer:
     # ------------------------------------------------------------------
     def _configure_styles(self, doc: Document) -> None:
         for section in doc.sections:
-            section.top_margin = Inches(0.75)
-            section.bottom_margin = Inches(0.7)
+            section.top_margin = Inches(0.6)
+            section.bottom_margin = Inches(0.6)
             section.left_margin = Inches(0.8)
             section.right_margin = Inches(0.8)
         normal = doc.styles["Normal"]
-        normal.font.name = "Aptos"
+        normal.font.name = BODY_FONT
         normal.font.size = Pt(10.5)
         for level, size in ((1, 16), (2, 13), (3, 11.5)):
             try:
                 h = doc.styles[f"Heading {level}"]
+                h.font.name = BODY_FONT
                 h.font.color.rgb = BRAND
                 h.font.size = Pt(size)
                 h.font.bold = True
             except KeyError:
                 continue
+        try:
+            title = doc.styles["Title"]
+            title.font.name = BODY_FONT
+            title.font.color.rgb = BRAND
+            title.font.size = Pt(28)
+            title.font.bold = True
+        except KeyError:
+            pass
 
     def _add_header_footer(self, doc: Document, title: str) -> None:
         section = doc.sections[0]
@@ -126,6 +136,7 @@ class DocxComposer:
         lead_run.bold = True
         lead_run.font.size = Pt(11)
         lead_run.font.color.rgb = ACCENT
+        lead_run.font.name = BODY_FONT
 
         for _ in range(2):
             doc.add_paragraph()
@@ -135,6 +146,7 @@ class DocxComposer:
         run.bold = True
         run.font.size = Pt(28)
         run.font.color.rgb = BRAND
+        run.font.name = BODY_FONT
 
         if context.client_name:
             sub = doc.add_paragraph()
@@ -142,6 +154,7 @@ class DocxComposer:
             r = sub.add_run(f"Prepared for {context.client_name}")
             r.font.size = Pt(15)
             r.font.color.rgb = ACCENT
+            r.font.name = BODY_FONT
 
         strap = doc.add_paragraph()
         strap.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -151,6 +164,7 @@ class DocxComposer:
         strap_run.font.size = Pt(10.5)
         strap_run.italic = True
         strap_run.font.color.rgb = RGBColor(0x44, 0x44, 0x44)
+        strap_run.font.name = BODY_FONT
 
         doc.add_paragraph()
         summary = doc.add_table(rows=0, cols=2)
@@ -173,6 +187,7 @@ class DocxComposer:
         note_run = note.add_run("Confidential draft prepared for review")
         note_run.font.size = Pt(9)
         note_run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+        note_run.font.name = BODY_FONT
         doc.add_page_break()
 
     def _add_toc(self, doc: Document, sections: list[SectionResult]) -> None:
@@ -206,7 +221,43 @@ class DocxComposer:
         for idx, section in enumerate(sections, 1):
             doc.add_heading(f"{idx}. {section.title}", level=1)
             self._render_markdownish(doc, section.content)
+            self._render_evidence_images(doc, section)
             doc.add_paragraph()
+
+    def _render_evidence_images(self, doc: Document, section: SectionResult) -> None:
+        image_paths: list[str] = []
+        for evidence in section.evidence or []:
+            for path in getattr(evidence, "image_paths", []) or []:
+                if path not in image_paths:
+                    image_paths.append(path)
+        if not image_paths:
+            return
+
+        added = 0
+        for raw_path in image_paths:
+            if added >= 2:
+                break
+            path = Path(raw_path)
+            if not path.is_absolute():
+                path = self.settings.assets_path / path
+            if not path.exists():
+                continue
+            if path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff"}:
+                continue
+            try:
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.add_run().add_picture(str(path), width=Inches(5.9))
+                caption = doc.add_paragraph()
+                caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = caption.add_run(f"Figure {added + 1}: {section.title}")
+                run.italic = True
+                run.font.size = Pt(8.5)
+                run.font.name = BODY_FONT
+                run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+                added += 1
+            except Exception:
+                continue
 
     # ------------------------------------------------------------------
     def _render_markdownish(self, doc: Document, content: str) -> None:

@@ -167,6 +167,7 @@ class EvidenceChunk(BaseModel):
     text: str
     score: float
     summary: str = ""
+    image_paths: list[str] = Field(default_factory=list)
     source_proposal: str = ""
     source_section: str = ""
     source_document: str = ""
@@ -179,6 +180,7 @@ class KnowledgeBaseChunk(BaseModel):
     chunk_id: str
     summary: str = ""
     text: str = ""
+    image_paths: list[str] = Field(default_factory=list)
     source_proposal: str = ""
     source_section: str = ""
     source_document: str = ""

@@ -73,6 +73,15 @@ def _summary_from_payload(payload: dict[str, Any]) -> str:
     return head if len(words) <= 12 else f"{head}..."
 
 
+def _image_paths_from_payload(payload: dict[str, Any]) -> list[str]:
+    value = payload.get("image_paths") or payload.get("images") or []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
 class QdrantService:
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -194,6 +203,7 @@ class QdrantService:
                 EvidenceChunk(
                     text=_first(payload, _TEXT_KEYS),
                     summary=_summary_from_payload(payload),
+                    image_paths=_image_paths_from_payload(payload),
                     score=float(getattr(h, "score", 0.0) or 0.0),
                     source_proposal=_first(payload, _SOURCE_KEYS),
                     source_section=_first(payload, _SECTION_KEYS),
@@ -235,6 +245,7 @@ class QdrantService:
                 EvidenceChunk(
                     text=_first(payload, _TEXT_KEYS),
                     summary=_summary_from_payload(payload),
+                    image_paths=_image_paths_from_payload(payload),
                     score=float(getattr(h, "score", 0.0) or 0.0),
                     source_proposal=_first(payload, _SOURCE_KEYS),
                     source_section=_first(payload, _SECTION_KEYS),
@@ -333,6 +344,7 @@ class QdrantService:
                     chunk_id=str(getattr(p, "id", "")),
                     summary=_summary_from_payload(payload),
                     text=_first(payload, _TEXT_KEYS),
+                    image_paths=_image_paths_from_payload(payload),
                     source_proposal=_first(payload, _SOURCE_KEYS),
                     source_section=_first(payload, _SECTION_KEYS),
                     source_document=_first(payload, ("document_name", "file", "filename", "document")),
@@ -365,6 +377,7 @@ class QdrantService:
             chunk_id=str(getattr(p, "id", "")),
             summary=_summary_from_payload(payload),
             text=_first(payload, _TEXT_KEYS),
+            image_paths=_image_paths_from_payload(payload),
             source_proposal=_first(payload, _SOURCE_KEYS),
             source_section=_first(payload, _SECTION_KEYS),
             source_document=_first(payload, ("document_name", "file", "filename", "document")),

@@ -153,6 +153,9 @@ def _lexical_fallback(
                     text=text,
                     score=score,
                     summary=" ".join(text.split()[:12]) + ("..." if len(text.split()) > 12 else ""),
+                    image_paths=[str(path).strip() for path in payload.get("image_paths", []) if str(path).strip()]
+                    if isinstance(payload.get("image_paths", []), list)
+                    else [str(payload.get("image_paths")).strip()] if payload.get("image_paths") else [],
                     source_proposal=norm["source"],
                     source_section=norm["section"],
                     source_document=norm["document"],

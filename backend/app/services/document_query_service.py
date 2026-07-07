@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter, OrderedDict
-from typing import Iterable
+from typing import Any, Iterable
 
 from app.models.schemas import ChatMessage, DocumentQueryResponse, EvidenceChunk
 from app.services.embedding_service import get_embedder
@@ -624,7 +624,7 @@ def _lexical_rank(
     if not query_terms:
         return []
 
-    docs: list[tuple[dict[str, str], list[str], str]] = []
+    docs: list[tuple[dict[str, str], dict[str, Any], list[str], str]] = []
     wanted = {name.lower() for name in document_names if name.strip()}
     for payload in payloads:
         norm = {
@@ -644,20 +644,20 @@ def _lexical_rank(
         tokens = _tokens(haystack)
         if not tokens or not (query_terms & set(tokens)):
             continue
-        docs.append((norm, tokens, haystack))
+        docs.append((norm, payload, tokens, haystack))
 
     if not docs:
         return []
 
-    avgdl = sum(len(tokens) for _norm, tokens, _haystack in docs) / max(len(docs), 1)
+    avgdl = sum(len(tokens) for _norm, _payload, tokens, _haystack in docs) / max(len(docs), 1)
     df = Counter()
-    for _norm, tokens, _haystack in docs:
+    for _norm, _payload, tokens, _haystack in docs:
         df.update(set(tokens))
 
     scored: list[tuple[float, EvidenceChunk]] = []
     k1 = 1.4
     b = 0.72
-    for norm, tokens, haystack in docs:
+    for norm, payload, tokens, haystack in docs:
         counts = Counter(tokens)
         score = 0.0
         for term in query_terms:
@@ -677,6 +677,13 @@ def _lexical_rank(
                 EvidenceChunk(
                     text=norm["text"],
                     summary=norm["summary"] or " ".join(norm["text"].split()[:12]),
+                    image_paths=[
+                        str(path).strip()
+                        for path in (payload.get("image_paths") or [])
+                        if str(path).strip()
+                    ]
+                    if isinstance(payload.get("image_paths"), list)
+                    else [str(payload.get("image_paths")).strip()] if payload.get("image_paths") else [],
                     score=score,
                     source_proposal=norm["source"],
                     source_section=norm["section"],

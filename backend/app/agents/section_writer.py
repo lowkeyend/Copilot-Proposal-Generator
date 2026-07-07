@@ -274,6 +274,24 @@ def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceC
         )
 
     return "\n\n".join(paragraphs)
+
+
+def _static_company_profile(req: GenerateSectionRequest) -> str:
+    client = req.context.client_name or "the client"
+    return (
+        f"### {req.section_title}\n\n"
+        "Systems Limited is a long-established banking transformation partner with a "
+        "track record of delivering Temenos Transact upgrades, core banking "
+        "implementations, and associated delivery services for regulated financial "
+        "institutions. Its engagement model combines domain expertise, controlled "
+        "delivery governance, and structured execution across business, technical, "
+        "testing, and cutover workstreams.\n\n"
+        "The company works through a disciplined implementation approach that aligns "
+        "scope, timeline, and ownership across stakeholders, with the objective of "
+        f"supporting {client} through a predictable, submission-ready transformation "
+        "program. The profile is intentionally static so it remains consistent across "
+        "proposal versions."
+    )
 _SYSTEM = (
     "You are a senior proposal writer for enterprise banking transformation bids. "
     "Write only final client-ready proposal prose. Do not explain your reasoning. "
@@ -873,6 +891,15 @@ async def _expand_via_llm(
 
 
 async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
+    title = req.section_title.lower()
+    if any(term in title for term in ("company profile", "client profile", "about systems limited")):
+        return SectionResult(
+            title=req.section_title,
+            content=_static_company_profile(req),
+            evidence=[],
+            model=get_llm().resolve_model(req.model),
+        )
+
     # 1) Retrieve evidence (Agent 6).
     evidence = retrieve_for_section(
         section_title=req.section_title,

@@ -74,6 +74,7 @@ export interface EvidenceChunk {
   text: string;
   score: number;
   summary: string;
+  image_paths?: string[];
   source_proposal: string;
   source_section: string;
   source_document: string;
@@ -139,6 +140,7 @@ export interface KnowledgeBaseChunk {
   chunk_id: string;
   summary: string;
   text: string;
+  image_paths?: string[];
   source_proposal: string;
   source_section: string;
   source_document: string;

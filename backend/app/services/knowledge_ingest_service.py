@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import io
 import re
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Iterable
 from uuid import uuid4
+from zipfile import ZipFile
 
 from docx import Document
 from fastapi import UploadFile
 
+from app.config import get_settings
 from app.services.qdrant_service import get_qdrant
 
 try:
@@ -92,6 +95,35 @@ def _extract_docx(data: bytes) -> str:
     return _clean("\n".join(blocks))
 
 
+def _safe_name(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_") or "document"
+
+
+def _extract_docx_images(filename: str, data: bytes) -> list[str]:
+    settings = get_settings()
+    base = _safe_name(Path(filename).stem)
+    image_dir = settings.assets_path / "document-images" / base
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    saved: list[str] = []
+    try:
+        with ZipFile(io.BytesIO(data)) as archive:
+            media = [
+                name
+                for name in archive.namelist()
+                if name.startswith("word/media/")
+                and not name.endswith("/")
+            ]
+            for idx, member in enumerate(media, start=1):
+                ext = Path(member).suffix.lower() or ".bin"
+                target = image_dir / f"image_{idx:02d}{ext}"
+                target.write_bytes(archive.read(member))
+                saved.append(str(target))
+    except Exception:
+        return []
+    return saved
+
+
 def _extract_pdf(data: bytes) -> str:
     if PdfReader is None:
         raise RuntimeError("PDF support is unavailable because pypdf is not installed.")
@@ -114,6 +146,7 @@ def _extract_text(name: str, data: bytes) -> str:
 class ParsedDocument:
     filename: str
     text: str
+    image_paths: list[str]
 
 
 class KnowledgeIngestService:
@@ -125,7 +158,8 @@ class KnowledgeIngestService:
             text = _extract_text(name, data)
             if not text:
                 continue
-            parsed.append(ParsedDocument(filename=name, text=text))
+            images = _extract_docx_images(name, data) if name.lower().endswith(".docx") else []
+            parsed.append(ParsedDocument(filename=name, text=text, image_paths=images))
         return parsed
 
     async def ingest_files(
@@ -157,6 +191,7 @@ class KnowledgeIngestService:
                     "file": doc.filename,
                     "document_name": doc.filename,
                     "section": source_section or f"Upload chunk {index}",
+                    "image_paths": doc.image_paths,
                 }
                 points.append(
                     qdrant.build_point(
