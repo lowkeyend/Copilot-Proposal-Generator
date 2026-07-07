@@ -280,17 +280,25 @@ def _static_company_profile(req: GenerateSectionRequest) -> str:
     client = req.context.client_name or "the client"
     return (
         f"### {req.section_title}\n\n"
-        "Systems Limited is a long-established banking transformation partner with a "
-        "track record of delivering Temenos Transact upgrades, core banking "
-        "implementations, and associated delivery services for regulated financial "
-        "institutions. Its engagement model combines domain expertise, controlled "
-        "delivery governance, and structured execution across business, technical, "
-        "testing, and cutover workstreams.\n\n"
-        "The company works through a disciplined implementation approach that aligns "
-        "scope, timeline, and ownership across stakeholders, with the objective of "
-        f"supporting {client} through a predictable, submission-ready transformation "
-        "program. The profile is intentionally static so it remains consistent across "
-        "proposal versions."
+        "Systems Limited is a globally recognized technology company with more than "
+        "49 years of industry experience, specializing in digital transformation for "
+        "the Banking and Financial Services industry. The company has established a "
+        "strong reputation as a trusted partner to financial institutions worldwide "
+        "through its work on complex core banking modernization programs, including "
+        "Temenos Transact upgrades, migrations, and large-scale transformation "
+        "initiatives.\n\n"
+        "With a global delivery footprint, deep banking domain capability, and a "
+        "disciplined delivery model, Systems Limited combines TIM-led execution with "
+        "proprietary accelerators, a centralized library of pro-forma documents and "
+        "processes, and a governance framework designed to maintain quality, "
+        "consistency, and reusability across projects. This delivery approach is "
+        "complemented by experience across assessment, retrofit, testing, cutover, "
+        "training, and stabilization workstreams.\n\n"
+        "The organisation collaborates with leading technology partners and supports "
+        "banks through flexible delivery models, structured change management, and "
+        "post-go-live support. Its scale, methodology, and Temenos experience provide "
+        f"a strong foundation for supporting {client} through a controlled and "
+        "submission-ready transformation program."
     )
 _SYSTEM = (
     "You are a senior proposal writer for enterprise banking transformation bids. "
@@ -731,6 +739,10 @@ def _clean_model_output(text: str, section_title: str) -> str:
     cleaned = _extract_section_block(text)
     cleaned = re.sub(r"```(?:markdown|md|text)?", "", cleaned, flags=re.IGNORECASE)
     cleaned = cleaned.replace("```", "").strip()
+    cleaned = cleaned.replace("<section>", "").replace("</section>", "")
+    cleaned = re.sub(r"(?im)^\s*traceback \(most recent call last\):\s*$", "", cleaned)
+    cleaned = re.sub(r"(?im)^\s*file \".*?\", line \d+.*$", "", cleaned)
+    cleaned = re.sub(r"(?im)^\s*.*site-packages.*$", "", cleaned)
     cleaned = _strip_leading_heading(cleaned, section_title)
     lines = cleaned.splitlines()
     if lines:
@@ -754,6 +766,10 @@ def _validation_issues(
         return issues
     if _looks_like_commentary(text):
         issues.append("output contains commentary or instruction-style language")
+    if "<section>" in lowered or "</section>" in lowered:
+        issues.append("output contains raw section tags")
+    if "traceback (most recent call last)" in lowered:
+        issues.append("output contains traceback text")
     forbidden_terms = (
         "source document",
         "source material",
