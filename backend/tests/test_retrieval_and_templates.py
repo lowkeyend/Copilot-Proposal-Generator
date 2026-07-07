@@ -114,3 +114,60 @@ def test_selected_document_retrieval_stays_within_selected_docs(monkeypatch) -> 
     assert chunks
     assert all(chunk.source_document == "Selected Doc" for chunk in chunks)
     assert any("R20" in chunk.text for chunk in chunks)
+
+
+def test_selected_document_retrieval_matches_without_extension(monkeypatch) -> None:
+    class FakeQdrant:
+        def search_text(self, query_text: str, model: str, top_k: int = 6):
+            return []
+
+        def search(self, query_vector, top_k: int = 6, keywords=None):
+            return []
+
+        def scroll_payloads(self, limit: int = 5000):
+            return [
+                {
+                    "text": "SYS will execute a like-for-like technical upgrade.",
+                    "section": "Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ",
+                    "source": "Alkuraimibank - Core Banking Upgrade(1).docx",
+                    "family": "Uploaded Knowledge",
+                    "document_name": "Alkuraimibank - Core Banking Upgrade(1).docx",
+                    "_point_id": "alk-1",
+                }
+            ]
+
+        @staticmethod
+        def normalize_payload(payload):
+            return {
+                "text": payload["text"],
+                "source": payload["source"],
+                "document": payload.get("document_name", ""),
+                "section": payload["section"],
+                "family": payload["family"],
+            }
+
+    fake_settings = SimpleNamespace(embedding_provider="qdrant", embedding_model="dummy")
+    fake_context = ClientContext(
+        client_name="Bank ABC",
+        industry="Banking",
+        client_profile="established",
+        canonical_product="Temenos Transact",
+        selected_documents=["Alkuraimibank - Core Banking Upgrade(1)"],
+        intake=IntakeProfile(),
+    )
+
+    monkeypatch.setattr("app.agents.retrieval_agent.get_qdrant", lambda: FakeQdrant())
+    monkeypatch.setattr("app.agents.retrieval_agent.get_settings", lambda: fake_settings)
+
+    chunks = retrieve_for_section(
+        section_title="Scope of Work",
+        keywords=["scope", "upgrade"],
+        context=fake_context,
+        proposal_family="Temenos",
+        top_k=4,
+        include_temenos_official=False,
+        use_hybrid_retrieval=True,
+    )
+
+    assert chunks
+    assert all("Alkuraimibank" in chunk.source_document for chunk in chunks)

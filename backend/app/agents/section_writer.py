@@ -21,6 +21,45 @@ from app.services.llm_service import LLMError, get_llm
 
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_GROUNDING_IGNORE_TERMS = {
+    "will",
+    "shall",
+    "would",
+    "could",
+    "should",
+    "from",
+    "with",
+    "that",
+    "this",
+    "these",
+    "those",
+    "their",
+    "there",
+    "into",
+    "through",
+    "during",
+    "over",
+    "under",
+    "about",
+    "after",
+    "before",
+    "technical",
+    "project",
+    "scope",
+    "solution",
+    "proposed",
+    "client",
+    "delivery",
+    "support",
+    "phase",
+    "phased",
+    "upgrade",
+    "core",
+    "bank",
+    "banking",
+    "temenos",
+    "transact",
+}
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -84,6 +123,14 @@ def _section_keywords_from_text(text: str) -> list[str]:
     if not cleaned:
         return []
     return [t for t in re.findall(r"[a-z0-9]+", cleaned.lower()) if len(t) > 2]
+
+
+def _support_terms(text: str) -> set[str]:
+    return {
+        term
+        for term in _section_keywords_from_text(text)
+        if term not in _GROUNDING_IGNORE_TERMS
+    }
 
 def _extract_fact_sentence(sentence: str, section_keywords: list[str]) -> str | None:
     sentence = _clean_phrase(sentence)
@@ -812,19 +859,20 @@ def _validation_issues(
     if len(text.split()) < max(180, _minimum_words(req) // 2):
         issues.append("output is too short for a submission-ready section")
     if evidence:
-        evidence_terms: set[str] = set()
-        for fact in _evidence_facts(evidence, _section_keywords(req)):
-            evidence_terms.update(_section_keywords_from_text(fact))
-        content_terms = set(_section_keywords_from_text(text))
+        evidence_terms = _grounding_evidence_terms(req, evidence)
+        context_terms = _grounding_context_terms(req)
+        content_terms = _support_terms(text)
         if content_terms and len(content_terms & evidence_terms) == 0:
             issues.append("output has weak lexical grounding against retrieved evidence")
         sentences = _split_sentences(text)
         unsupported_sentences = 0
         for sentence in sentences:
-            sentence_terms = set(_section_keywords_from_text(sentence))
-            if len(sentence_terms) >= 4 and len(sentence_terms & evidence_terms) == 0:
+            sentence_terms = _support_terms(sentence)
+            evidence_overlap = len(sentence_terms & evidence_terms)
+            context_overlap = len(sentence_terms & context_terms)
+            if len(sentence_terms) >= 4 and evidence_overlap + context_overlap < 2:
                 unsupported_sentences += 1
-        if unsupported_sentences:
+        if unsupported_sentences >= 3:
             issues.append(
                 f"output contains {unsupported_sentences} sentence(s) with weak evidence grounding"
             )
@@ -843,6 +891,51 @@ def _validation_issues(
 
 def _should_expand(content: str, req: GenerateSectionRequest) -> bool:
     return len(_clean_phrase(content).split()) < _minimum_words(req)
+
+
+def _grounding_context_terms(req: GenerateSectionRequest) -> set[str]:
+    context_parts = [
+        req.context.client_name or "",
+        req.context.industry or "",
+        req.context.canonical_product or "",
+    ]
+    return _support_terms(" ".join(context_parts))
+
+
+def _grounding_evidence_terms(
+    req: GenerateSectionRequest, evidence: list[EvidenceChunk]
+) -> set[str]:
+    terms: set[str] = set()
+    for fact in _evidence_facts(evidence, _section_keywords(req)):
+        terms.update(_support_terms(fact))
+    for chunk in evidence:
+        terms.update(_support_terms(chunk.summary or ""))
+        terms.update(_support_terms(chunk.source_section or ""))
+        terms.update(_support_terms((chunk.text or "")[:400]))
+    return terms
+
+
+def _prune_unsupported_sentences(
+    content: str, req: GenerateSectionRequest, evidence: list[EvidenceChunk]
+) -> str:
+    evidence_terms = _grounding_evidence_terms(req, evidence)
+    context_terms = _grounding_context_terms(req)
+    paragraphs = [part.strip() for part in re.split(r"\n{2,}", content or "") if part.strip()]
+    kept_paragraphs: list[str] = []
+    for paragraph in paragraphs:
+        if paragraph.lstrip().startswith(("#", "-", "*")):
+            kept_paragraphs.append(paragraph)
+            continue
+        kept_sentences: list[str] = []
+        for sentence in _split_sentences(paragraph):
+            sentence_terms = _support_terms(sentence)
+            evidence_overlap = len(sentence_terms & evidence_terms)
+            context_overlap = len(sentence_terms & context_terms)
+            if len(sentence_terms) < 4 or evidence_overlap + context_overlap >= 2:
+                kept_sentences.append(sentence)
+        if kept_sentences:
+            kept_paragraphs.append(" ".join(kept_sentences))
+    return "\n\n".join(kept_paragraphs).strip()
 
 
 async def _generate_via_llm(
@@ -1029,6 +1122,15 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         content = _apply_context_guardrails(content, req)
         issues = _validation_issues(content, req, evidence)
         attempts += 1
+
+    grounding_only = issues and all(
+        "weak evidence grounding" in issue or "weak lexical grounding" in issue
+        for issue in issues
+    )
+    if grounding_only:
+        content = _prune_unsupported_sentences(content, req, evidence)
+        content = _apply_context_guardrails(content, req)
+        issues = _validation_issues(content, req, evidence)
 
     if issues:
         raise LLMError(

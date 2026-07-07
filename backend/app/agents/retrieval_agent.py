@@ -42,6 +42,55 @@ _TIM_TERMS = (
     "adopt not adapt",
 )
 
+_SECTION_ALIASES: dict[str, list[str]] = {
+    "scope of work": [
+        "core upgrade",
+        "environment readiness assessment",
+        "upgrade analysis",
+        "core technical upgrade",
+        "customization interface retrofit",
+        "deployment go live",
+        "post go live support",
+    ],
+    "proposed solution": [
+        "target solution principles",
+        "upgrade approach",
+        "environment assessment",
+        "upgrade execution",
+        "testing validation",
+        "cutover stabilization",
+    ],
+    "upgrade methodology": [
+        "general upgrade activities",
+        "stage 1 project initiation",
+        "stage 2 project planning",
+        "stage 3 upgrade analysis",
+        "stage 4 technical upgrade",
+        "stage 5 unit testing",
+        "stage 6 upgrade training",
+        "stage 7 system integration testing",
+        "stage 8 user acceptance testing",
+        "stage 9 mock upgrade and dress rehearsals",
+        "stage 10 pre go live",
+        "stage 11 go live",
+        "stage 12 post go live support",
+    ],
+    "project governance": [
+        "communication plan",
+        "quality management",
+        "change management",
+        "project issue escalation management",
+        "review board",
+        "steering committee",
+        "governance model",
+    ],
+    "introduction": [
+        "proprietary notice",
+        "validity period",
+        "contact details",
+    ],
+}
+
 
 def _tokens(text: str) -> set[str]:
     return {t for t in re.findall(r"[a-z0-9]+", text.lower()) if len(t) > 2}
@@ -49,6 +98,30 @@ def _tokens(text: str) -> set[str]:
 
 def _token_list(text: str) -> list[str]:
     return [t for t in re.findall(r"[a-z0-9]+", text.lower()) if len(t) > 2]
+
+
+def _normalize_document_name(name: str) -> str:
+    lowered = (name or "").strip().lower()
+    lowered = re.sub(r"\.(docx|doc|pdf|txt|md)$", "", lowered)
+    lowered = re.sub(r"[^a-z0-9]+", "", lowered)
+    return lowered
+
+
+def _document_matches(wanted: set[str], *candidates: str) -> bool:
+    normalized_candidates = {
+        _normalize_document_name(candidate)
+        for candidate in candidates
+        if _normalize_document_name(candidate)
+    }
+    return any(item in normalized_candidates for item in wanted)
+
+
+def _section_alias_terms(section_title: str) -> list[str]:
+    key = (section_title or "").strip().lower()
+    aliases = _SECTION_ALIASES.get(key, [])
+    if not aliases:
+        return []
+    return aliases
 
 
 def _lexical_fallback(
@@ -64,7 +137,7 @@ def _lexical_fallback(
     if not query_terms:
         query_terms = _token_list(section_title)
     query_tokens = set(query_terms)
-    wanted = {name.strip().lower() for name in (document_names or []) if name.strip()}
+    wanted = {_normalize_document_name(name) for name in (document_names or []) if name.strip()}
 
     docs: list[tuple[dict[str, str], list[str], str]] = []
     for payload in qdrant.scroll_payloads(limit=5000):
@@ -73,18 +146,7 @@ def _lexical_fallback(
         if not text:
             continue
         if wanted:
-            haystack = " ".join(
-                part
-                for part in (
-                    norm["text"],
-                    norm["section"],
-                    norm["source"],
-                    norm["document"],
-                    norm["family"],
-                )
-                if part
-            ).lower()
-            if not any(name in haystack for name in wanted):
+            if not _document_matches(wanted, norm["document"], norm["source"]):
                 continue
 
         haystack = " ".join(
@@ -208,20 +270,12 @@ def _filter_context_mismatch(
 def _filter_by_documents(chunks: list[EvidenceChunk], document_names: list[str]) -> list[EvidenceChunk]:
     if not document_names:
         return chunks
-    wanted = {name.strip().lower() for name in document_names if name.strip()}
+    wanted = {_normalize_document_name(name) for name in document_names if name.strip()}
     if not wanted:
         return chunks
     filtered: list[EvidenceChunk] = []
     for chunk in chunks:
-        haystack = " ".join(
-            [
-                chunk.source_document or "",
-                chunk.source_proposal or "",
-                chunk.summary or "",
-                chunk.text or "",
-            ]
-        ).lower()
-        if any(name in haystack for name in wanted):
+        if _document_matches(wanted, chunk.source_document or "", chunk.source_proposal or ""):
             filtered.append(chunk)
     return filtered
 
@@ -266,6 +320,7 @@ def retrieve_for_section(
     # Build a section-specific query, not a generic one.
     query_parts = [
         section_title,
+        " ".join(_section_alias_terms(section_title)),
         " ".join(keywords or []),
         proposal_family,
         context.project_type,
