@@ -226,6 +226,26 @@ def _filter_by_documents(chunks: list[EvidenceChunk], document_names: list[str])
     return filtered
 
 
+def _section_alignment_score(section_title: str, chunk: EvidenceChunk) -> float:
+    wanted = _tokens(section_title)
+    if not wanted:
+        return 0.0
+    haystack = " ".join(
+        [
+            chunk.source_section or "",
+            chunk.summary or "",
+            chunk.text[:300] if chunk.text else "",
+        ]
+    )
+    available = _tokens(haystack)
+    if not available:
+        return 0.0
+    overlap = len(wanted & available)
+    if overlap == 0:
+        return 0.0
+    return overlap / max(len(wanted), 1)
+
+
 def retrieve_for_section(
     section_title: str,
     keywords: list[str],
@@ -342,4 +362,8 @@ def retrieve_for_section(
         chunks.sort(
             key=lambda c: (c.proposal_family.lower() == fam, c.score), reverse=True
         )
+    chunks.sort(
+        key=lambda c: (_section_alignment_score(section_title, c), c.score),
+        reverse=True,
+    )
     return chunks[: max(top_k, 8)]

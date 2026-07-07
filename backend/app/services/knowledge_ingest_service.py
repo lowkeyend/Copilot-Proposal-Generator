@@ -95,6 +95,40 @@ def _extract_docx(data: bytes) -> str:
     return _clean("\n".join(blocks))
 
 
+def _is_heading_paragraph(paragraph) -> bool:
+    style_name = ((getattr(paragraph.style, "name", "") or "").strip()).lower()
+    if not style_name:
+        return False
+    return style_name.startswith("heading") or style_name in {"title", "subtitle"}
+
+
+def _extract_docx_sections(data: bytes) -> list[tuple[str, str]]:
+    doc = Document(io.BytesIO(data))
+    sections: list[tuple[str, str]] = []
+    current_heading = "Document Overview"
+    current_blocks: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_blocks
+        body = _clean("\n".join(current_blocks))
+        if body:
+            sections.append((current_heading, body))
+        current_blocks = []
+
+    for paragraph in doc.paragraphs:
+        text = _clean(paragraph.text or "")
+        if not text:
+            continue
+        if _is_heading_paragraph(paragraph):
+            flush()
+            current_heading = text
+            continue
+        current_blocks.append(text)
+
+    flush()
+    return sections or [("Document Overview", _extract_docx(data))]
+
+
 def _safe_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_") or "document"
 
@@ -142,11 +176,46 @@ def _extract_text(name: str, data: bytes) -> str:
     raise RuntimeError("Unsupported file type. Upload .docx, .pdf, .txt, or .md files.")
 
 
+def _chunk_generic_document(name: str, text: str) -> list[ParsedChunk]:
+    section = Path(name).stem or "Document Overview"
+    chunks = _chunk_text(text)
+    return [
+        ParsedChunk(
+            text=chunk,
+            section=section,
+            summary=f"{section}: {_summary(chunk, limit=10)}",
+        )
+        for chunk in chunks
+    ]
+
+
+def _chunk_docx_document(name: str, data: bytes) -> list[ParsedChunk]:
+    parsed: list[ParsedChunk] = []
+    for heading, body in _extract_docx_sections(data):
+        for chunk in _chunk_text(body):
+            parsed.append(
+                ParsedChunk(
+                    text=chunk,
+                    section=heading or "Document Overview",
+                    summary=f"{heading or 'Document Overview'}: {_summary(chunk, limit=10)}",
+                )
+            )
+    return parsed or _chunk_generic_document(name, _extract_docx(data))
+
+
 @dataclass
 class ParsedDocument:
     filename: str
     text: str
     image_paths: list[str]
+    raw_bytes: bytes
+
+
+@dataclass
+class ParsedChunk:
+    text: str
+    section: str
+    summary: str
 
 
 class KnowledgeIngestService:
@@ -159,7 +228,7 @@ class KnowledgeIngestService:
             if not text:
                 continue
             images = _extract_docx_images(name, data) if name.lower().endswith(".docx") else []
-            parsed.append(ParsedDocument(filename=name, text=text, image_paths=images))
+            parsed.append(ParsedDocument(filename=name, text=text, image_paths=images, raw_bytes=data))
         return parsed
 
     async def ingest_files(
@@ -179,24 +248,28 @@ class KnowledgeIngestService:
 
         for doc in parsed:
             filenames.append(doc.filename)
-            chunks = _chunk_text(doc.text)
+            chunks = (
+                _chunk_docx_document(doc.filename, doc.raw_bytes)
+                if doc.filename.lower().endswith(".docx")
+                else _chunk_generic_document(doc.filename, doc.text)
+            )
             for index, chunk in enumerate(chunks, start=1):
                 payload = {
-                    "text": chunk,
-                    "chunk_text": chunk,
-                    "chunk_summary": _summary(chunk),
+                    "text": chunk.text,
+                    "chunk_text": chunk.text,
+                    "chunk_summary": chunk.summary,
                     "source_proposal": source_proposal or doc.filename,
-                    "source_section": source_section or f"Upload chunk {index}",
+                    "source_section": source_section or chunk.section or f"Upload chunk {index}",
                     "proposal_family": proposal_family or "Uploaded Knowledge",
                     "file": doc.filename,
                     "document_name": doc.filename,
-                    "section": source_section or f"Upload chunk {index}",
+                    "section": source_section or chunk.section or f"Upload chunk {index}",
                     "image_paths": doc.image_paths,
                 }
                 points.append(
                     qdrant.build_point(
                         chunk_id=uuid4().hex,
-                        text=chunk,
+                        text=chunk.text,
                         payload=payload,
                     )
                 )

@@ -55,6 +55,12 @@ def _add_field(paragraph, instruction: str) -> None:
     run._r.append(fld_end)
 
 
+def _clear_paragraph(paragraph) -> None:
+    element = paragraph._element
+    for child in list(element):
+        element.remove(child)
+
+
 class DocxComposer:
     def __init__(self) -> None:
         self.settings = get_settings()
@@ -67,12 +73,18 @@ class DocxComposer:
         sections: list[SectionResult],
         proposal_id: Optional[str] = None,
     ) -> Path:
-        doc = Document()
-        self._configure_styles(doc)
-        self._add_header_footer(doc, title)
-        self._add_title_page(doc, title, context)
-        self._add_toc(doc, sections)
-        self._add_sections(doc, sections)
+        template_path = self.settings.proposal_template_path
+        if template_path.exists():
+            doc = Document(str(template_path))
+            self._fill_template_metadata(doc, title, context)
+            self._inject_template_content(doc, sections)
+        else:
+            doc = Document()
+            self._configure_styles(doc)
+            self._add_header_footer(doc, title)
+            self._add_title_page(doc, title, context)
+            self._add_toc(doc)
+            self._add_sections(doc, sections)
 
         self.settings.generated_path.mkdir(parents=True, exist_ok=True)
         safe = re.sub(r"[^A-Za-z0-9_-]+", "_", title).strip("_") or "proposal"
@@ -190,29 +202,9 @@ class DocxComposer:
         note_run.font.name = BODY_FONT
         doc.add_page_break()
 
-    def _add_toc(self, doc: Document, sections: list[SectionResult]) -> None:
+    def _add_toc(self, doc: Document) -> None:
         heading = doc.add_paragraph("Table of Contents")
         heading.style = doc.styles["Heading 1"]
-        intro = doc.add_paragraph(
-            "This contents page is rendered explicitly so the outline is visible "
-            "even before Word refreshes fields."
-        )
-        intro.paragraph_format.space_after = Pt(6)
-        table = doc.add_table(rows=1, cols=2)
-        table.style = "Light Grid Accent 1"
-        hdr = table.rows[0].cells
-        _set_cell_text(hdr[0], "Section", bold=True)
-        _set_cell_text(hdr[1], "Purpose", bold=True)
-        for idx, section in enumerate(sections, 1):
-            row = table.add_row().cells
-            _set_cell_text(row[0], f"{idx}. {section.title}")
-            purpose = section.content.strip().splitlines()[0] if section.content else ""
-            _set_cell_text(row[1], purpose[:180] or section.title)
-        doc.add_paragraph()
-        p = doc.add_paragraph()
-        p.add_run("Word TOC field: ").bold = True
-        p.add_run("Open in Word and refresh fields to populate page numbers.")
-        # TOC field across heading levels 1-3; updates on open / F9 in Word.
         field_p = doc.add_paragraph()
         _add_field(field_p, 'TOC \\o "1-3" \\h \\z \\u')
         doc.add_page_break()
@@ -259,10 +251,91 @@ class DocxComposer:
             except Exception:
                 continue
 
+    def _find_paragraph(self, doc: Document, token: str):
+        target = token.strip().lower()
+        for paragraph in doc.paragraphs:
+            if target in (paragraph.text or "").strip().lower():
+                return paragraph
+        return None
+
+    def _fill_template_metadata(self, doc: Document, title: str, context: ClientContext) -> None:
+        replacements = {
+            "{{PROPOSAL_TITLE}}": title,
+            "{{CLIENT_NAME}}": context.client_name or "",
+            "{{INDUSTRY}}": context.industry or "",
+            "{{PROJECT_TYPE}}": context.project_type or "",
+            "{{DATE}}": datetime.now().strftime("%d %B %Y"),
+        }
+        for paragraph in doc.paragraphs:
+            text = paragraph.text or ""
+            new_text = text
+            for token, value in replacements.items():
+                new_text = new_text.replace(token, value)
+            if new_text != text:
+                paragraph.text = new_text
+
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        text = paragraph.text or ""
+                        new_text = text
+                        for token, value in replacements.items():
+                            new_text = new_text.replace(token, value)
+                        if new_text != text:
+                            paragraph.text = new_text
+
+    def _inject_toc_at_placeholder(self, doc: Document) -> bool:
+        paragraph = self._find_paragraph(doc, "{{TOC}}")
+        if paragraph is None:
+            return False
+        _clear_paragraph(paragraph)
+        _add_field(paragraph, 'TOC \\o "1-3" \\h \\z \\u')
+        return True
+
+    def _inject_template_content(self, doc: Document, sections: list[SectionResult]) -> None:
+        self._inject_toc_at_placeholder(doc)
+        inserted_any = False
+        for section in sections:
+            token = f"{{{{SECTION:{section.title}}}}}".lower()
+            paragraph = self._find_paragraph(doc, token)
+            if paragraph is None:
+                continue
+            _clear_paragraph(paragraph)
+            self._render_markdownish_into_paragraph(doc, paragraph, section.content)
+            self._render_evidence_images(doc, section)
+            inserted_any = True
+
+        collection_token = self._find_paragraph(doc, "{{SECTIONS}}")
+        if collection_token is not None:
+            _clear_paragraph(collection_token)
+            for section in sections:
+                doc.add_heading(section.title, level=1)
+                self._render_markdownish(doc, section.content)
+                self._render_evidence_images(doc, section)
+                doc.add_paragraph()
+            inserted_any = True
+
+        if not inserted_any:
+            if not self._inject_toc_at_placeholder(doc):
+                self._add_toc(doc)
+            self._add_sections(doc, sections)
+
+    def _render_markdownish_into_paragraph(self, doc: Document, paragraph, content: str) -> None:
+        sanitized = self._sanitize_render_text(content)
+        blocks = [block.strip() for block in re.split(r"\n{2,}", sanitized) if block.strip()]
+        if not blocks:
+            return
+        first, *rest = blocks
+        self._add_inline(paragraph, first)
+        for block in rest:
+            p = doc.add_paragraph()
+            self._add_inline(p, block)
+
     # ------------------------------------------------------------------
     def _render_markdownish(self, doc: Document, content: str) -> None:
         """Render a lightweight subset of markdown the LLM tends to produce."""
-        lines = content.splitlines()
+        lines = self._sanitize_render_text(content).splitlines()
         i = 0
         table_buffer: list[str] = []
 
@@ -319,6 +392,16 @@ class DocxComposer:
 
         if table_buffer:
             flush_table()
+
+    def _sanitize_render_text(self, content: str) -> str:
+        cleaned = content or ""
+        cleaned = re.sub(r"</?(?:title|paragraph|h1|h2|h3|body|html|xml|div|span|p)\b[^>]*>", "", cleaned, flags=re.IGNORECASE)
+        cleaned = cleaned.replace("<section>", "").replace("</section>", "")
+        cleaned = re.sub(r"\{\{[^}]+\}\}", "", cleaned)
+        cleaned = re.sub(r"(?im)^word toc field:.*$", "", cleaned)
+        cleaned = re.sub(r"(?im)^open in word and refresh fields.*$", "", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned.strip()
 
     def _add_inline(self, paragraph, text: str) -> None:
         """Handle **bold** spans inline."""

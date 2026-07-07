@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     generated_dir: str = Field(default="../generated", alias="GENERATED_DIR")
     templates_dir: str = Field(default="../templates", alias="TEMPLATES_DIR")
     assets_dir: str = Field(default="../assets", alias="ASSETS_DIR")
+    proposal_template_file: str = Field(
+        default="master_proposal_template.docx", alias="PROPOSAL_TEMPLATE_FILE"
+    )
 
     # ---- Server ----
     host: str = Field(default="0.0.0.0", alias="HOST")
@@ -127,6 +130,13 @@ class Settings(BaseSettings):
     @property
     def assets_path(self) -> Path:
         return self._resolve(self.assets_dir)
+
+    @property
+    def proposal_template_path(self) -> Path:
+        template = Path(self.proposal_template_file.strip() or "master_proposal_template.docx")
+        if not template.is_absolute():
+            template = self.templates_path / template
+        return template
 
     @property
     def qdrant_local_path(self) -> Path:

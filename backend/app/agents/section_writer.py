@@ -761,6 +761,8 @@ def _clean_model_output(text: str, section_title: str) -> str:
     cleaned = re.sub(r"```(?:markdown|md|text)?", "", cleaned, flags=re.IGNORECASE)
     cleaned = cleaned.replace("```", "").strip()
     cleaned = cleaned.replace("<section>", "").replace("</section>", "")
+    cleaned = re.sub(r"</?(?:title|paragraph|h1|h2|h3|body|html|xml|div|span|p)\b[^>]*>", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\{\{[^}]+\}\}", "", cleaned)
     cleaned = re.sub(r"(?im)^\s*traceback \(most recent call last\):\s*$", "", cleaned)
     cleaned = re.sub(r"(?im)^\s*file \".*?\", line \d+.*$", "", cleaned)
     cleaned = re.sub(r"(?im)^\s*.*site-packages.*$", "", cleaned)
@@ -789,6 +791,8 @@ def _validation_issues(
         issues.append("output contains commentary or instruction-style language")
     if "<section>" in lowered or "</section>" in lowered:
         issues.append("output contains raw section tags")
+    if re.search(r"</?(?:title|paragraph|h1|h2|h3|body|html|xml|div|span|p)\b", lowered):
+        issues.append("output contains leaked markup tags")
     if "traceback (most recent call last)" in lowered:
         issues.append("output contains traceback text")
     forbidden_terms = (
@@ -800,6 +804,8 @@ def _validation_issues(
         "the section should",
         "the final wording should",
         "write the section",
+        "word toc field",
+        "open in word and refresh fields",
     )
     if any(term in lowered for term in forbidden_terms):
         issues.append("output mentions evidence or prompt mechanics")

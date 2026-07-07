@@ -12,7 +12,7 @@ def test_upgrade_technical_template_sections() -> None:
     templates = _extra_curated_patterns()
     assert len(templates) == 1
     template = templates[0]
-    assert template.name == "Upgrade + Technical"
+    assert template.name == "Technical Upgrade"
     assert [section.title for section in template.sections] == [
         "Company Profile",
         "Scope of Work",
