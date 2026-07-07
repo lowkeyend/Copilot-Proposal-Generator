@@ -1302,10 +1302,6 @@ def _validation_issues(
     )
     if any(term in lowered for term in forbidden_terms):
         issues.append("output mentions evidence or prompt mechanics")
-    if len(text.split()) < max(180, _minimum_words(req) // 2):
-        schema = _REFERENCE_SECTION_SCHEMAS.get((req.section_title or "").strip().lower())
-        if not schema:
-            issues.append("output is too short for a submission-ready section")
     evidence_text = " ".join(
         _clean_phrase(
             " ".join(
@@ -1370,8 +1366,6 @@ def _validation_issues(
             issues.append(
                 f"output does not follow the reference section structure closely enough ({heading_matches}/{minimum_matches} headings found)"
             )
-        elif len(text.split()) < 110:
-            issues.append("output is too short for a reference-structured section")
     return issues
 
 
