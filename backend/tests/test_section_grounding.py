@@ -76,3 +76,30 @@ def test_validation_allows_grounded_scope_section() -> None:
     issues = _validation_issues(content, req, evidence)
 
     assert not [issue for issue in issues if "weak evidence grounding" in issue]
+
+
+def test_validation_rejects_unsupported_consulting_benefits() -> None:
+    req = _request()
+    evidence = [
+        EvidenceChunk(
+            text=(
+                "SYS will execute a like-for-like technical upgrade. "
+                "The scope includes environment readiness assessment, upgrade analysis, "
+                "technical uplift, testing, cutover, and post-go-live support."
+            ),
+            score=1.0,
+            summary="Scope includes upgrade activities",
+            source_section="Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ",
+            source_document="Alkuraimi.docx",
+            source_proposal="Alkuraimi.docx",
+            proposal_family="Temenos",
+        )
+    ]
+    content = (
+        "This upgrade is intended to deliver improved performance, enhanced architecture, "
+        "stronger security controls, and access to new product capabilities."
+    )
+
+    issues = _validation_issues(content, req, evidence)
+
+    assert any("improved performance" in issue for issue in issues)

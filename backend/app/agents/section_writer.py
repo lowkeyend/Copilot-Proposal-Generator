@@ -60,6 +60,18 @@ _GROUNDING_IGNORE_TERMS = {
     "temenos",
     "transact",
 }
+_CONSULTING_PHRASES = (
+    "improved performance",
+    "enhanced architecture",
+    "stronger security controls",
+    "new product capabilities",
+    "future readiness",
+    "business value",
+    "strategic transformation",
+    "accelerated realization",
+    "operating model",
+    "target state",
+)
 
 
 def _normalize_whitespace(text: str) -> str:
@@ -131,6 +143,64 @@ def _support_terms(text: str) -> set[str]:
         for term in _section_keywords_from_text(text)
         if term not in _GROUNDING_IGNORE_TERMS
     }
+
+
+def _section_style_guide(req: GenerateSectionRequest) -> str:
+    title = (req.section_title or "").strip().lower()
+    if title == "scope of work":
+        return (
+            "- Write in a contractual implementation style, not a consulting style.\n"
+            "- State the work packages, activities, boundaries, deliverables, testing scope, deployment scope, and out-of-scope items only where supported.\n"
+            "- Prefer procedural and activity-based wording such as assessment, installation, retrofit, validation, reconciliation, testing, cutover, and post-go-live support.\n"
+            "- Do not add business benefits, strategic outcomes, governance commentary, or generalized platform advantages."
+        )
+    if title in {"proposed solution", "solution"}:
+        return (
+            "- Describe the technical solution and upgrade approach in operational terms.\n"
+            "- Preserve source terms such as like-for-like upgrade, retrofit, GPACK, COB validation, Data Integrity Health Check, runbook, interfaces, and reconciliation whenever the evidence supports them.\n"
+            "- Do not rewrite the section as a product marketing narrative or introduce unstated benefits."
+        )
+    if title in {"upgrade methodology", "methodology"}:
+        return (
+            "- Write as a stage-by-stage implementation procedure.\n"
+            "- Preserve named activities, utilities, reviews, validations, and testing stages from the evidence.\n"
+            "- Do not summarize away operational artifacts into generic methodology language."
+        )
+    if title in {"project governance", "governance"}:
+        return (
+            "- Restrict the content to governance, communication, quality management, escalation, committees, and control mechanisms supported by evidence.\n"
+            "- Do not add solution scope, benefits, or implementation tasks unless the evidence explicitly places them in governance."
+        )
+    if title in {"executive summary", "introduction"}:
+        return (
+            "- Keep the summary factual and proposal-like.\n"
+            "- State what the engagement covers, current-to-target release context, and the implementation approach only where supported.\n"
+            "- Do not promise benefits, improvements, or capabilities that are not explicitly stated in the evidence."
+        )
+    return (
+        "- Match the source document genre: operational, implementation-focused, and procedural.\n"
+        "- Prefer concrete activities, artifacts, controls, and responsibilities over generalized interpretation."
+    )
+
+
+def _section_boundary_rules(req: GenerateSectionRequest) -> str:
+    title = (req.section_title or "").strip().lower()
+    if title == "scope of work":
+        return (
+            "- Exclude governance bodies, executive sponsorship, communication plans, PMO language, and strategic-value commentary unless explicitly present in scope evidence.\n"
+            "- Exclude inferred benefits such as improved performance, enhanced architecture, stronger security, and new capabilities unless those exact benefits appear in the evidence."
+        )
+    if title in {"proposed solution", "solution"}:
+        return (
+            "- Exclude company profile content, awards, staffing scale, and generic value statements.\n"
+            "- Keep focus on technical principles, environments, retrofit approach, validation, and cutover mechanics."
+        )
+    if title in {"upgrade methodology", "methodology"}:
+        return (
+            "- Exclude governance narrative and benefits language.\n"
+            "- Focus on stages, activities, checkpoints, testing, reviews, and transition tasks."
+        )
+    return "- Exclude content that belongs to other sections unless the evidence explicitly places it here."
 
 def _extract_fact_sentence(sentence: str, section_keywords: list[str]) -> str | None:
     sentence = _clean_phrase(sentence)
@@ -416,6 +486,10 @@ QUALITY CONTROLS
 - Detail profile: {detail_level}
 - Evidence-only mode: {require_evidence}
 - Official Temenos website evidence included: {include_temenos}
+- Section style requirements:
+{section_style}
+- Section boundary rules:
+{section_boundaries}
 - The EVIDENCE FACTS block is the only source of truth for section claims.
 - Do not use the raw evidence excerpts to invent new claims; distill them only
   into the facts shown above.
@@ -441,7 +515,7 @@ final section body only
 
 The heading is added by the system, so do not include the section title inside
 the section body. Match a formal proposal style:
-- open with a crisp, substantive lead paragraph;
+- open with a crisp, substantive lead paragraph that sounds like a proposal section, not commentary;
 - use section-specific subheadings only when they add clarity;
 - include concrete phases, deliverables, assumptions, dependencies, governance
   points, risk implications, and acceptance criteria where the evidence supports them;
@@ -452,7 +526,8 @@ the section body. Match a formal proposal style:
   use bullets or tables only to add precision, not to shorten the answer;
 - do not invent numeric SLAs, timelines, team sizes, commercial values, or
   percentages unless those exact details appear in the evidence;
-- avoid generic marketing language and vague claims.
+- avoid generic marketing language, benefits language, and vague claims;
+- do not rewrite procedural source material into advisory or consulting prose.
 
 Target {length} of well-structured content. Treat the lower bound as the
 minimum acceptable depth unless the retrieved evidence is genuinely sparse.
@@ -489,7 +564,19 @@ def _format_evidence_facts(chunks: list[EvidenceChunk], req: GenerateSectionRequ
     facts = _evidence_facts(chunks, _section_keywords(req))
     if not facts:
         return "(No explicit supporting facts found.)"
-    return "\n".join(f"- {fact}" for fact in facts)
+    lines: list[str] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        header = _clean_phrase(chunk.source_section or chunk.summary or "Evidence")
+        for fact in _extract_support_points(chunk, _section_keywords(req), limit=4):
+            key = re.sub(r"[^a-z0-9]+", " ", f"{header} {fact}".lower()).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            lines.append(f"- [{header}] {fact}")
+            if len(lines) >= 24:
+                return "\n".join(lines)
+    return "\n".join(lines or [f"- {fact}" for fact in facts])
 
 def _length_for(req: GenerateSectionRequest) -> str:
     if req.instruction:
@@ -858,6 +945,21 @@ def _validation_issues(
         issues.append("output mentions evidence or prompt mechanics")
     if len(text.split()) < max(180, _minimum_words(req) // 2):
         issues.append("output is too short for a submission-ready section")
+    evidence_text = " ".join(
+        _clean_phrase(
+            " ".join(
+                [
+                    chunk.text or "",
+                    chunk.summary or "",
+                    chunk.source_section or "",
+                ]
+            )
+        ).lower()
+        for chunk in evidence
+    )
+    for phrase in _CONSULTING_PHRASES:
+        if phrase in lowered and phrase not in evidence_text:
+            issues.append(f"output introduces unsupported consulting-style claim: {phrase}")
     if evidence:
         evidence_terms = _grounding_evidence_terms(req, evidence)
         context_terms = _grounding_context_terms(req)
@@ -886,6 +988,18 @@ def _validation_issues(
         )
         if any(alias in lowered for alias in aliases) and canonical_product.lower() not in lowered:
             issues.append("output uses inconsistent product naming")
+    if (req.section_title or "").strip().lower() == "scope of work":
+        forbidden = (
+            "executive sponsorship",
+            "steering committee",
+            "communication plan",
+            "governance model",
+            "operating model",
+            "strategic transformation",
+        )
+        for phrase in forbidden:
+            if phrase in lowered and phrase not in evidence_text:
+                issues.append(f"scope section contains cross-section leakage: {phrase}")
     return issues
 
 
@@ -971,6 +1085,8 @@ async def _generate_via_llm(
                     detail_level=req.detail_level,
                     require_evidence="enabled" if req.require_evidence else "disabled",
                     include_temenos="yes" if req.include_temenos_official else "no",
+                    section_style=_section_style_guide(req),
+                    section_boundaries=_section_boundary_rules(req),
                     length=length,
                 ),
             },
