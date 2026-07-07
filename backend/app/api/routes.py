@@ -285,6 +285,8 @@ async def generate_section(req: GenerateSectionRequest) -> SectionResult:
         return await run_section_writer(req)
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Section generation failed: {exc}") from exc
 
 
 @router.post("/regenerate-section", response_model=SectionResult, tags=["agents"])
@@ -294,6 +296,8 @@ async def regenerate_section(req: GenerateSectionRequest) -> SectionResult:
         return await run_section_writer(req)
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Section regeneration failed: {exc}") from exc
 
 
 # --------------------------------------------------------------------------
@@ -338,6 +342,11 @@ async def generate_proposal(req: GenerateProposalRequest) -> GenerateProposalRes
         try:
             result = await run_section_writer(section_req)
         except LLMError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Section '{toc_item.title}' failed: {exc}",
+            ) from exc
+        except Exception as exc:
             raise HTTPException(
                 status_code=502,
                 detail=f"Section '{toc_item.title}' failed: {exc}",

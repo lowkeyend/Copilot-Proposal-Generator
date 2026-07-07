@@ -45,6 +45,14 @@ class LLMService:
             return model
         return self.settings.preferred_default_model
 
+    def _candidate_models(self, model: Optional[str]) -> list[str]:
+        resolved = self.resolve_model(model)
+        candidates: list[str] = [resolved]
+        for item in self.settings.supported_models:
+            if item not in candidates:
+                candidates.append(item)
+        return candidates
+
     async def chat(
         self,
         messages: list[dict[str, str]],
@@ -57,7 +65,6 @@ class LLMService:
                 "OPENROUTER_API_KEY is not set. Add it to backend/.env to enable generation."
             )
 
-        model_id = self.resolve_model(model)
         api_key = get_openrouter_api_key()
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -65,42 +72,49 @@ class LLMService:
             "HTTP-Referer": self.settings.openrouter_app_url,
             "X-Title": self.settings.openrouter_app_name,
         }
-        payload: dict[str, Any] = {
-            "model": model_id,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-
         url = f"{self.settings.openrouter_base_url.rstrip('/')}/chat/completions"
         async with httpx.AsyncClient(timeout=120.0) as client:
-            last_error = ""
-            for attempt in range(3):
-                resp = await client.post(url, headers=headers, json=payload)
-                if resp.status_code == 429 and attempt < 2:
-                    retry_after = resp.headers.get("Retry-After", "").strip()
-                    delay = 0.0
-                    if retry_after.isdigit():
-                        delay = float(retry_after)
-                    else:
-                        try:
-                            body = resp.json()
-                            delay = float(
-                                body.get("error", {})
-                                .get("metadata", {})
-                                .get("retry_after_seconds", 0)
-                            )
-                        except Exception:
-                            delay = 0.0
-                    await asyncio.sleep(max(1.0, min(delay or 3.0, 20.0)))
-                    continue
-                if resp.status_code >= 400:
-                    last_error = f"OpenRouter error {resp.status_code}: {resp.text[:500]}"
-                    raise LLMError(last_error)
-                data = resp.json()
-                break
-            else:  # pragma: no cover
-                raise LLMError(last_error or "OpenRouter request failed after retries.")
+            errors: list[str] = []
+            for model_id in self._candidate_models(model):
+                payload: dict[str, Any] = {
+                    "model": model_id,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                }
+                last_error = ""
+                for attempt in range(3):
+                    resp = await client.post(url, headers=headers, json=payload)
+                    if resp.status_code == 429 and attempt < 2:
+                        retry_after = resp.headers.get("Retry-After", "").strip()
+                        delay = 0.0
+                        if retry_after.isdigit():
+                            delay = float(retry_after)
+                        else:
+                            try:
+                                body = resp.json()
+                                delay = float(
+                                    body.get("error", {})
+                                    .get("metadata", {})
+                                    .get("retry_after_seconds", 0)
+                                )
+                            except Exception:
+                                delay = 0.0
+                        await asyncio.sleep(max(1.0, min(delay or 3.0, 20.0)))
+                        continue
+                    if resp.status_code >= 400:
+                        last_error = f"{model_id}: OpenRouter error {resp.status_code}: {resp.text[:280]}"
+                        break
+                    data = resp.json()
+                    break
+                else:  # pragma: no cover
+                    last_error = f"{model_id}: OpenRouter request failed after retries."
+
+                if not last_error:
+                    break
+                errors.append(last_error)
+            else:
+                raise LLMError(" | ".join(errors)[:1600] or "OpenRouter request failed.")
         try:
             return data["choices"][0]["message"]["content"]
         except (KeyError, IndexError) as exc:  # pragma: no cover
