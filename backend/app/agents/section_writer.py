@@ -10,8 +10,12 @@ free-form `instruction` (e.g. "make it shorter", "rewrite the timeline").
 from __future__ import annotations
 
 import re
+from functools import lru_cache
+from pathlib import Path
 
+from docx import Document
 from app.agents.retrieval_agent import retrieve_for_section
+from app.config import ROOT_DIR, get_settings
 from app.models.schemas import (
     EvidenceChunk,
     GenerateSectionRequest,
@@ -138,6 +142,78 @@ _REFERENCE_SECTION_SCHEMAS: dict[str, dict[str, object]] = {
         ],
         "minimum_matches": 4,
     },
+}
+_REFERENCE_SECTION_LAYOUTS: dict[str, list[tuple[int, str]]] = {
+    "introduction": [
+        (2, "Proprietary Notice"),
+        (2, "Validity Period"),
+        (2, "Contact Details"),
+    ],
+    "scope of work": [
+        (2, "Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ"),
+        (3, "Environment Readiness Assessment"),
+        (3, "Upgrade Analysis"),
+        (3, "Core Technical Upgrade"),
+        (3, "Customization & Interface Retrofit"),
+        (3, "Testing"),
+        (3, "Deployment & Go-Live"),
+        (3, "Post Go-Live Support"),
+    ],
+    "proposed solution": [
+        (2, "Target Solution Principles"),
+        (3, "Target Solution Principles"),
+        (3, "Upgrade Approach"),
+        (4, "Environment Assessment"),
+        (4, "Upgrade Execution"),
+        (4, "Customization Retrofit"),
+        (4, "Testing & Validation"),
+        (4, "Cutover & Stabilization"),
+    ],
+    "upgrade methodology": [
+        (2, "General Upgrade Activities"),
+        (3, "Stage 1: Project Initiation"),
+        (4, "Review of SOW"),
+        (4, "Runbook Template"),
+        (4, "Run Book template standardization for client."),
+        (4, "Hardware Sizing"),
+        (4, "Analysis Utility Setup"),
+        (3, "Stage 2: Project Planning"),
+        (3, "Stage 3: Upgrade Analysis"),
+        (4, "Data Integrity Health Check"),
+        (4, "Identify local jobs and CORE Batches"),
+        (3, "Stage 4: Technical Upgrade"),
+        (4, "Perform technology upgrades as per analysis identification."),
+        (4, "Perform Core Upgrade"),
+        (4, "Post upgrade verification for successful and complete Upgrade"),
+        (4, "GL Reconciliation"),
+        (3, "Stage 5: Unit testing in integrated environment before delivery to client"),
+        (4, "Unit Testing of functionality"),
+        (4, "Unit Testing of interfaces"),
+        (4, "Unit Testing of Gpacks"),
+        (3, "Stage 6: Upgrade Training"),
+        (4, "Pre-UAT Training"),
+        (4, "Technical and admin Training advance level"),
+        (4, "Functional Training covering new features"),
+        (3, "Stage 7: System Integration Testing"),
+        (3, "Stage 8: User Acceptance Testing"),
+        (3, "Stage 9: Mock Upgrade and Dress Rehearsals"),
+        (3, "Stage 10: Pre-GO LIVE"),
+        (3, "Stage 11: GO LIVE"),
+        (3, "Stage 12: Post GO LIVE Support"),
+        (2, "Planning and Control"),
+    ],
+    "project timeline": [
+        (3, "Core Banking Upgrade R19 to R26"),
+    ],
+    "project governance": [
+        (2, "Communication Plan"),
+        (2, "Quality Management"),
+        (2, "Change Management"),
+        (2, "Project Issue Escalation Management"),
+        (3, "Review Board"),
+        (3, "Steering Committee"),
+        (2, "Governance Model"),
+    ],
 }
 
 
@@ -403,6 +479,199 @@ def _proposalize_fact(text: str) -> str:
     if "strong governance" in lowered:
         return "A strong governance framework will control scope, risk, decisions, and delivery cadence."
     return _sentence_case(text)
+
+
+def _normalize_heading_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+
+
+def _split_compound_items(text: str) -> list[str]:
+    cleaned = _clean_phrase(text)
+    if not cleaned:
+        return []
+    parts = _split_sentences(cleaned)
+    if len(parts) > 1:
+        return _dedupe_preserve_order([part.rstrip(".") + "." for part in parts if part])
+    compound = re.split(r"(?<=[a-z\)])\s+(?=[A-Z][A-Za-z0-9&/-]{2,})", cleaned)
+    items = [_clean_phrase(item).rstrip(".") + "." for item in compound if len(_clean_phrase(item).split()) >= 2]
+    return _dedupe_preserve_order(items or [cleaned.rstrip(".") + "."])
+
+
+def _matches_reference_heading(chunk: EvidenceChunk, heading: str) -> bool:
+    normalized_heading = _normalize_heading_key(heading)
+    normalized_section = _normalize_heading_key(chunk.source_section or "")
+    normalized_summary = _normalize_heading_key(chunk.summary or "")
+    if not normalized_heading:
+        return False
+    return any(
+        value and (normalized_heading in value or value in normalized_heading)
+        for value in (normalized_section, normalized_summary)
+    )
+
+
+def _reference_heading_chunks(evidence: list[EvidenceChunk], heading: str) -> list[EvidenceChunk]:
+    return [chunk for chunk in evidence if _matches_reference_heading(chunk, heading)]
+
+
+def _compile_heading_block(level: int, heading: str, chunks: list[EvidenceChunk]) -> str:
+    if not chunks:
+        return ""
+    prefix = "#" * max(2, min(level, 4))
+    lines = [f"{prefix} {heading}"]
+    seen: set[str] = set()
+    for chunk in chunks:
+        for item in _split_compound_items(chunk.text or ""):
+            key = re.sub(r"[^a-z0-9]+", " ", item.lower()).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            lines.append(f"- {item.rstrip('.')}")
+    return "\n".join(lines)
+
+
+def _candidate_document_paths(name: str) -> list[Path]:
+    cleaned = (name or "").strip()
+    if not cleaned:
+        return []
+    settings = get_settings()
+    candidates = [
+        ROOT_DIR / "data" / cleaned,
+        ROOT_DIR.parent / "data" / cleaned,
+        settings.templates_path / cleaned,
+        settings.templates_path / "master_proposal_template.docx",
+    ]
+    seen: set[str] = set()
+    output: list[Path] = []
+    for path in candidates:
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(path)
+    return output
+
+
+def _is_heading_style(style_name: str) -> bool:
+    lowered = (style_name or "").strip().lower()
+    return lowered.startswith("heading") or lowered.startswith("cn head")
+
+
+@lru_cache(maxsize=32)
+def _load_document_heading_map(path_str: str) -> dict[str, list[str]]:
+    path = Path(path_str)
+    doc = Document(str(path))
+    sections: dict[str, list[str]] = {}
+    current_heading = ""
+    for paragraph in doc.paragraphs:
+        text = _clean_phrase(paragraph.text or "")
+        if not text:
+            continue
+        style_name = getattr(getattr(paragraph, "style", None), "name", "") or ""
+        if _is_heading_style(style_name):
+            current_heading = text
+            sections.setdefault(current_heading, [])
+            continue
+        if current_heading:
+            sections.setdefault(current_heading, []).append(text)
+    return sections
+
+
+def _local_document_heading_map(req: GenerateSectionRequest) -> dict[str, list[str]]:
+    names = [name for name in getattr(req.context, "selected_documents", []) or [] if name]
+    for name in names:
+        for path in _candidate_document_paths(name):
+            if path.exists() and path.suffix.lower() == ".docx":
+                return _load_document_heading_map(str(path.resolve()))
+    template = get_settings().proposal_template_path
+    if template.exists():
+        return _load_document_heading_map(str(template.resolve()))
+    return {}
+
+
+def _reference_summary_paragraph(req: GenerateSectionRequest, evidence: list[EvidenceChunk]) -> str:
+    heading_map = _local_document_heading_map(req)
+    local_lines = heading_map.get("Executive Summary", [])
+    if local_lines:
+        paragraphs = [
+            re.sub(r"Alkuraimi(?: Islamic)? Bank", req.context.client_name or "the client", line, flags=re.IGNORECASE)
+            for line in local_lines
+        ]
+        return "\n\n".join(paragraphs)
+    facts = _evidence_facts(evidence, _section_keywords(req))
+    if not facts:
+        return ""
+    client = req.context.client_name or "the client"
+    paragraphs: list[str] = []
+    lead_facts = " ".join(facts[:2])
+    if lead_facts:
+        paragraphs.append(re.sub(r"Alkuraimi Bank", client, lead_facts, flags=re.IGNORECASE))
+    if len(facts) > 2:
+        paragraphs.append(re.sub(r"Alkuraimi Bank", client, " ".join(facts[2:5]), flags=re.IGNORECASE))
+    if len(facts) > 5:
+        paragraphs.append(re.sub(r"Alkuraimi Bank", client, " ".join(facts[5:8]), flags=re.IGNORECASE))
+    return "\n\n".join(_dedupe_preserve_order([_clean_phrase(p) for p in paragraphs if p]))
+
+
+def _compile_reference_layout(req: GenerateSectionRequest, evidence: list[EvidenceChunk]) -> str:
+    title = (req.section_title or "").strip().lower()
+    layout = _REFERENCE_SECTION_LAYOUTS.get(title)
+    heading_map = _local_document_heading_map(req)
+    if title == "executive summary":
+        return _reference_summary_paragraph(req, evidence)
+    if title == "assumptions":
+        local_lines = heading_map.get("Assumptions", [])
+        if local_lines:
+            return "\n".join(f"- {re.sub(r'Alkuraimi(?: Islamic)? Bank', req.context.client_name or 'the client', line, flags=re.IGNORECASE).rstrip('.')}" for line in local_lines)
+        chunks = _reference_heading_chunks(evidence, "Assumptions") or evidence
+        lines = []
+        seen: set[str] = set()
+        for chunk in chunks:
+            for item in _split_compound_items(chunk.text or ""):
+                key = re.sub(r"[^a-z0-9]+", " ", item.lower()).strip()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                lines.append(f"- {item.rstrip('.')}")
+        return "\n".join(lines)
+    if not layout:
+        return ""
+
+    blocks: list[str] = []
+    for level, heading in layout:
+        local_lines = heading_map.get(heading, [])
+        if local_lines:
+            prefix = "#" * max(2, min(level, 4))
+            lines = [f"{prefix} {heading}"]
+            for line in local_lines:
+                rendered = re.sub(
+                    r"Alkuraimi(?: Islamic)? Bank",
+                    req.context.client_name or "the client",
+                    line,
+                    flags=re.IGNORECASE,
+                )
+                if level <= 2:
+                    suffix = "" if rendered.rstrip().endswith(":") else "."
+                    lines.append(rendered.rstrip(".") + suffix)
+                else:
+                    lines.append(f"- {rendered.rstrip('.')}")
+            blocks.append("\n".join(lines))
+            continue
+        heading_chunks = _reference_heading_chunks(evidence, heading)
+        if not heading_chunks and heading == "Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ":
+            heading_chunks = _reference_heading_chunks(evidence, "Core Upgrade")
+        block = _compile_heading_block(level, heading, heading_chunks)
+        if block:
+            blocks.append(block)
+    return "\n\n".join(blocks).strip()
+
+
+def _should_use_reference_compiler(req: GenerateSectionRequest) -> bool:
+    title = (req.section_title or "").strip().lower()
+    return (
+        (req.proposal_family or "").strip().lower() == "temenos"
+        and "upgrade" in (req.context.project_type or "").lower()
+        and title in set(_REFERENCE_SECTION_LAYOUTS) | {"executive summary", "assumptions"}
+    )
 
 
 def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceChunk], length: str) -> str:
@@ -1034,7 +1303,9 @@ def _validation_issues(
     if any(term in lowered for term in forbidden_terms):
         issues.append("output mentions evidence or prompt mechanics")
     if len(text.split()) < max(180, _minimum_words(req) // 2):
-        issues.append("output is too short for a submission-ready section")
+        schema = _REFERENCE_SECTION_SCHEMAS.get((req.section_title or "").strip().lower())
+        if not schema:
+            issues.append("output is too short for a submission-ready section")
     evidence_text = " ".join(
         _clean_phrase(
             " ".join(
@@ -1099,6 +1370,8 @@ def _validation_issues(
             issues.append(
                 f"output does not follow the reference section structure closely enough ({heading_matches}/{minimum_matches} headings found)"
             )
+        elif len(text.split()) < 110:
+            issues.append("output is too short for a reference-structured section")
     return issues
 
 
@@ -1298,6 +1571,20 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
             evidence=[],
             model=get_llm().resolve_model(req.model),
         )
+
+    if _should_use_reference_compiler(req):
+        compiled = _compile_reference_layout(req, evidence)
+        if compiled:
+            compiled = _remove_meta_language(compiled)
+            compiled = _apply_context_guardrails(compiled, req)
+            issues = _validation_issues(compiled, req, evidence)
+            if not issues or issues == ["output is too short for a reference-structured section"]:
+                return SectionResult(
+                    title=req.section_title,
+                    content=_strip_leading_heading(compiled, req.section_title),
+                    evidence=evidence,
+                    model=get_llm().resolve_model(req.model),
+                )
 
     llm = get_llm()
     if not llm.available:

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from app.agents.section_writer import _clean_model_output, _prune_unsupported_sentences, _validation_issues
+from app.agents.section_writer import (
+    _clean_model_output,
+    _compile_reference_layout,
+    _prune_unsupported_sentences,
+    _validation_issues,
+)
 from app.models.schemas import ClientContext, EvidenceChunk, GenerateSectionRequest, IntakeProfile
 
 
@@ -136,3 +141,42 @@ def test_scope_validation_requires_reference_structure() -> None:
     issues = _validation_issues(content, req, evidence)
 
     assert any("reference section structure" in issue for issue in issues)
+
+
+def test_compile_reference_layout_for_scope_of_work() -> None:
+    req = _request()
+    evidence = [
+        EvidenceChunk(
+            text="SYS will execute a like-for-like technical upgrade of Alkuraimi Bank’s Temenos Transact Core Banking platform from the current release to the latest agreed Temenos release. The scope includes:",
+            score=1.0,
+            summary="Scope structure",
+            source_section="Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ",
+            source_document="Alkuraimi.docx",
+            source_proposal="Alkuraimi.docx",
+            proposal_family="Temenos",
+        ),
+        EvidenceChunk(
+            text="Hardware, operating system, middleware, compiler, and database compatibility assessment Review of infrastructure readiness for target release",
+            score=1.0,
+            summary="Environment Readiness Assessment",
+            source_section="Environment Readiness Assessment",
+            source_document="Alkuraimi.docx",
+            source_proposal="Alkuraimi.docx",
+            proposal_family="Temenos",
+        ),
+        EvidenceChunk(
+            text="Inventory of existing modules, parameters, local developments, and integrations Upgrade impact assessment on customizations and interfaces",
+            score=1.0,
+            summary="Upgrade Analysis",
+            source_section="Upgrade Analysis",
+            source_document="Alkuraimi.docx",
+            source_proposal="Alkuraimi.docx",
+            proposal_family="Temenos",
+        ),
+    ]
+
+    compiled = _compile_reference_layout(req, evidence)
+
+    assert "## Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ" in compiled
+    assert "### Environment Readiness Assessment" in compiled
+    assert "### Upgrade Analysis" in compiled
