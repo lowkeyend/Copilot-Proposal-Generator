@@ -14,13 +14,14 @@ def test_upgrade_technical_template_sections() -> None:
     template = templates[0]
     assert template.name == "Technical Upgrade"
     assert [section.title for section in template.sections] == [
+        "Executive Summary",
+        "Introduction",
         "Company Profile",
         "Scope of Work",
-        "Solution",
-        "Methodology",
-        "Governance",
+        "Proposed Solution",
+        "Upgrade Methodology",
         "Project Timeline",
-        "Training",
+        "Project Governance",
         "Assumptions",
     ]
 

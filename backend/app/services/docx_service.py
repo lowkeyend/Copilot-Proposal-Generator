@@ -21,6 +21,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
+from docx.text.paragraph import Paragraph
 
 from app.config import get_settings
 from app.models.schemas import ClientContext, SectionResult
@@ -28,6 +29,13 @@ from app.models.schemas import ClientContext, SectionResult
 BRAND = RGBColor(0x1F, 0x3A, 0x5F)  # deep navy
 ACCENT = RGBColor(0x2E, 0x6F, 0x8E)
 BODY_FONT = "Century Gothic"
+STATIC_TEMPLATE_HEADINGS = {"Company Profile", "Case Studies"}
+SECTION_HEADING_ALIASES = {
+    "Solution": "Proposed Solution",
+    "Methodology": "Upgrade Methodology",
+    "Governance": "Project Governance",
+    "Training": "Upgrade Methodology",
+}
 
 
 def _set_cell_text(cell, text: str, bold: bool = False) -> None:
@@ -59,6 +67,18 @@ def _clear_paragraph(paragraph) -> None:
     element = paragraph._element
     for child in list(element):
         element.remove(child)
+
+
+def _paragraph_after(paragraph, style: str | None = None) -> Paragraph:
+    new_p = OxmlElement("w:p")
+    paragraph._p.addnext(new_p)
+    created = Paragraph(new_p, paragraph._parent)
+    if style:
+        try:
+            created.style = style
+        except KeyError:
+            pass
+    return created
 
 
 class DocxComposer:
@@ -258,6 +278,61 @@ class DocxComposer:
                 return paragraph
         return None
 
+    def _find_heading(self, doc: Document, title: str):
+        wanted = {
+            title.strip().lower(),
+            SECTION_HEADING_ALIASES.get(title.strip(), "").strip().lower(),
+        }
+        wanted = {item for item in wanted if item}
+        for paragraph in doc.paragraphs:
+            style_name = (getattr(getattr(paragraph, "style", None), "name", "") or "").lower()
+            text = (paragraph.text or "").strip().lower()
+            if text in wanted and ("heading" in style_name or style_name.startswith("cn head")):
+                return paragraph
+        return None
+
+    def _paragraph_heading_level(self, paragraph) -> int:
+        style_name = (getattr(getattr(paragraph, "style", None), "name", "") or "").lower()
+        match = re.search(r"heading\s+(\d+)", style_name)
+        if match:
+            return int(match.group(1))
+        if "cn head 1" in style_name:
+            return 1
+        return 9
+
+    def _delete_paragraph(self, paragraph) -> None:
+        element = paragraph._element
+        parent = element.getparent()
+        if parent is not None:
+            parent.remove(element)
+
+    def _replace_heading_section(self, doc: Document, heading, content: str) -> None:
+        current_level = self._paragraph_heading_level(heading)
+        cursor = heading._element.getnext()
+        removable = []
+
+        while cursor is not None:
+            next_cursor = cursor.getnext()
+            paragraph = next(
+                (item for item in doc.paragraphs if item._element == cursor),
+                None,
+            )
+            if paragraph is not None:
+                style_name = (getattr(getattr(paragraph, "style", None), "name", "") or "").lower()
+                if "heading" in style_name or style_name.startswith("cn head"):
+                    next_level = self._paragraph_heading_level(paragraph)
+                    if next_level <= current_level:
+                        break
+            removable.append(cursor)
+            cursor = next_cursor
+
+        for element in removable:
+            parent = element.getparent()
+            if parent is not None:
+                parent.remove(element)
+
+        self._render_markdownish_after(heading, content)
+
     def _fill_template_metadata(self, doc: Document, title: str, context: ClientContext) -> None:
         replacements = {
             "{{PROPOSAL_TITLE}}": title,
@@ -297,9 +372,16 @@ class DocxComposer:
         self._inject_toc_at_placeholder(doc)
         inserted_any = False
         for section in sections:
+            if section.title in STATIC_TEMPLATE_HEADINGS:
+                continue
             token = f"{{{{SECTION:{section.title}}}}}".lower()
             paragraph = self._find_paragraph(doc, token)
             if paragraph is None:
+                heading = self._find_heading(doc, section.title)
+                if heading is not None:
+                    self._replace_heading_section(doc, heading, section.content)
+                    self._render_evidence_images(doc, section)
+                    inserted_any = True
                 continue
             _clear_paragraph(paragraph)
             self._render_markdownish_into_paragraph(doc, paragraph, section.content)
@@ -331,6 +413,67 @@ class DocxComposer:
         for block in rest:
             p = doc.add_paragraph()
             self._add_inline(p, block)
+
+    def _render_markdownish_after(self, anchor: Paragraph, content: str) -> Paragraph:
+        lines = self._sanitize_render_text(content).splitlines()
+        table_buffer: list[str] = []
+        cursor = anchor
+
+        def flush_table() -> None:
+            nonlocal table_buffer, cursor
+            rows = [r for r in table_buffer if r.strip()]
+            rows = [r for r in rows if not re.match(r"^\s*\|?[\s:|-]+\|?\s*$", r)]
+            if not rows:
+                table_buffer = []
+                return
+            table_p = _paragraph_after(cursor)
+            parsed = [
+                [c.strip() for c in r.strip().strip("|").split("|")] for r in rows
+            ]
+            cols = max(len(r) for r in parsed)
+            table = table_p._parent.add_table(rows=0, cols=cols)
+            table._element.getparent().remove(table._element)
+            table_p._p.addnext(table._element)
+            for ridx, row in enumerate(parsed):
+                cells = table.add_row().cells
+                for cidx in range(cols):
+                    val = row[cidx] if cidx < len(row) else ""
+                    _set_cell_text(cells[cidx], val, bold=(ridx == 0))
+            cursor = table_p
+            table_buffer = []
+
+        for raw_line in lines:
+            line = raw_line.rstrip()
+            if "|" in line and line.strip().startswith("|"):
+                table_buffer.append(line)
+                continue
+            if table_buffer:
+                flush_table()
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("### "):
+                cursor = _paragraph_after(cursor, style="Heading 3")
+                self._add_inline(cursor, stripped[4:])
+            elif stripped.startswith("## "):
+                cursor = _paragraph_after(cursor, style="Heading 2")
+                self._add_inline(cursor, stripped[3:])
+            elif stripped.startswith("# "):
+                cursor = _paragraph_after(cursor, style="Heading 2")
+                self._add_inline(cursor, stripped[2:])
+            elif re.match(r"^[-*]\s+", stripped):
+                cursor = _paragraph_after(cursor, style="List Bullet")
+                self._add_inline(cursor, re.sub(r"^[-*]\s+", "", stripped))
+            elif re.match(r"^\d+[.)]\s+", stripped):
+                cursor = _paragraph_after(cursor, style="List Number")
+                self._add_inline(cursor, re.sub(r"^\d+[.)]\s+", "", stripped))
+            else:
+                cursor = _paragraph_after(cursor)
+                self._add_inline(cursor, stripped)
+
+        if table_buffer:
+            flush_table()
+        return cursor
 
     # ------------------------------------------------------------------
     def _render_markdownish(self, doc: Document, content: str) -> None:
