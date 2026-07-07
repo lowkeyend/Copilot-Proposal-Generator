@@ -156,6 +156,22 @@ def _evidence_briefs(
     return briefs[:6]
 
 
+def _evidence_facts(chunks: list[EvidenceChunk], section_keywords: list[str]) -> list[str]:
+    facts: list[str] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        points = _extract_support_points(chunk, section_keywords, limit=3)
+        for point in points:
+            key = re.sub(r"[^a-z0-9]+", " ", point.lower()).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            facts.append(point)
+            if len(facts) >= 18:
+                return facts
+    return facts
+
+
 def _proposalize_fact(text: str) -> str:
     lowered = _clean_phrase(text).lower()
     if not lowered:
@@ -304,19 +320,21 @@ _SYSTEM = (
     "You are a senior proposal writer for enterprise banking transformation bids. "
     "Write only final client-ready proposal prose. Do not explain your reasoning. "
     "Do not describe what the section should do. Do not mention evidence, chunks, "
-    "retrieval, source documents, questionnaire context, or instructions. Ground "
-    "every factual statement in the supplied evidence and client context only. If "
-    "the evidence does not support a claim, omit it rather than inventing it. Use "
-    "formal submission-ready language, preserve implementation specificity from the "
-    "corpus, and write as if the text will be sent directly to the client."
+    "retrieval, source documents, questionnaire context, or instructions. Use only "
+    "the explicitly provided evidence facts and client context. If a claim is not "
+    "directly supported, omit it. Do not use general banking or Temenos knowledge "
+    "to fill gaps. Every sentence must be grounded in the evidence facts block or "
+    "the client context. If you cannot support a sentence, do not write it. Use "
+    "formal submission-ready language, preserve implementation specificity from "
+    "the corpus, and write as if the text will be sent directly to the client."
 )
 
 _REPAIR_SYSTEM = (
     "You are an expert proposal editor. Rewrite flawed draft text into final "
     "client-ready proposal prose. Remove commentary, instructional language, "
-    "evidence references, source references, and duplicated phrases. Preserve only "
-    "supported content from the evidence and client context. Return only the final "
-    "section body."
+    "evidence references, source references, unsupported claims, and duplicated "
+    "phrases. Preserve only supported content from the evidence and client context. "
+    "Return only the final section body."
 )
 
 _TEMPLATE = """Write the proposal section titled "{section_title}".
@@ -344,32 +362,28 @@ ORIGINAL REQUEST
 EVIDENCE FROM PRIOR PROPOSALS (reuse and adapt; cite nothing inline):
 {evidence}
 
+EVIDENCE FACTS (the only facts you may use):
+{evidence_facts}
+
 QUALITY CONTROLS
 - Detail profile: {detail_level}
 - Evidence-only mode: {require_evidence}
 - Official Temenos website evidence included: {include_temenos}
-- Treat retrieved chunks as reusable proposal evidence, not as facts about the
-  current client when they conflict with CLIENT CONTEXT.
+- The EVIDENCE FACTS block is the only source of truth for section claims.
+- Do not use the raw evidence excerpts to invent new claims; distill them only
+  into the facts shown above.
+- Treat retrieved chunks as supporting context only; do not infer beyond the
+  explicit facts above.
 - The CLIENT CONTEXT is the ground truth for client type, product name, and
   implementation context.
 - Use the client name exactly as "{client}" throughout.
-- Use the canonical product name "{canonical_product}" consistently. Do not
-  alternate between product names unless the evidence clearly distinguishes
-  multiple products.
-- If current client profile is not greenfield, do not call the client a
-  greenfield bank, brand-new bank, new market entrant, or rapid-market-entry
-  institution even if a retrieved source chunk says that about another client.
-- For established-bank modernization/migration, explicitly connect migration
-  planning with data protection, security controls, governance, validation, and
-  cutover assurance when evidence supports those topics.
-- If PRINCE2, Scrum, agile, governance, steering committee, PMO, or delivery
-  model terms appear in evidence, keep those references coherent across delivery
-  and governance language.
-- Use "cloud-native architecture with deployment flexibility" when discussing
-  cloud positioning unless the evidence explicitly requires another distinction.
-- Prefer TIM wording and phase-based rollout language when the questionnaire
-  indicates TIM, MVP, phased launch, or go-live milestones.
-- Synthesize evidence into prose; do not restate the chunks.
+- Use the canonical product name "{canonical_product}" consistently.
+- If the client is not greenfield, do not use greenfield wording unless the
+  evidence facts explicitly support it.
+- If a claim cannot be supported by the evidence facts above, omit it.
+- Prefer concrete wording over generic vendor language.
+- Do not add background, market commentary, or industry claims unless the
+  evidence facts explicitly support them.
 - Do not mention source document names, chunk IDs, or source commentary in
   the final section.
 
@@ -422,6 +436,13 @@ def _format_evidence(chunks: list[EvidenceChunk]) -> str:
             continue
         lines.append(f"[EVIDENCE {i}] {header}\n- " + "\n- ".join(points))
     return "\n\n".join(lines)
+
+
+def _format_evidence_facts(chunks: list[EvidenceChunk], req: GenerateSectionRequest) -> str:
+    facts = _evidence_facts(chunks, _section_keywords(req))
+    if not facts:
+        return "(No explicit supporting facts found.)"
+    return "\n".join(f"- {fact}" for fact in facts)
 
 def _length_for(req: GenerateSectionRequest) -> str:
     if req.instruction:
@@ -784,6 +805,23 @@ def _validation_issues(
         issues.append("output mentions evidence or prompt mechanics")
     if len(text.split()) < max(180, _minimum_words(req) // 2):
         issues.append("output is too short for a submission-ready section")
+    if evidence:
+        evidence_terms: set[str] = set()
+        for fact in _evidence_facts(evidence, _section_keywords(req)):
+            evidence_terms.update(_section_keywords_from_text(fact))
+        content_terms = set(_section_keywords_from_text(text))
+        if content_terms and len(content_terms & evidence_terms) == 0:
+            issues.append("output has weak lexical grounding against retrieved evidence")
+        sentences = _split_sentences(text)
+        unsupported_sentences = 0
+        for sentence in sentences:
+            sentence_terms = set(_section_keywords_from_text(sentence))
+            if len(sentence_terms) >= 4 and len(sentence_terms & evidence_terms) == 0:
+                unsupported_sentences += 1
+        if unsupported_sentences:
+            issues.append(
+                f"output contains {unsupported_sentences} sentence(s) with weak evidence grounding"
+            )
     if req.context.client_profile != "greenfield" and "greenfield" in lowered:
         issues.append("output applies greenfield language to a non-greenfield client context")
     canonical_product = _clean_phrase(req.context.canonical_product or "")
@@ -830,6 +868,7 @@ async def _generate_via_llm(
                     prompt=req.prompt or "-",
                     instruction_block=instruction_block,
                     evidence=_format_evidence(evidence),
+                    evidence_facts=_format_evidence_facts(evidence, req),
                     detail_level=req.detail_level,
                     require_evidence="enabled" if req.require_evidence else "disabled",
                     include_temenos="yes" if req.include_temenos_official else "no",
@@ -838,7 +877,7 @@ async def _generate_via_llm(
             },
         ],
         model=req.model,
-        temperature=0.08,
+        temperature=0.0,
         max_tokens=1800,
     )
 
@@ -861,13 +900,14 @@ async def _repair_via_llm(
                     f"CLIENT: {req.context.client_name or 'the client'}\n"
                     f"CANONICAL PRODUCT: {req.context.canonical_product or 'Temenos Transact'}\n"
                     f"CLIENT PROFILE: {req.context.client_profile or 'established'}\n\n"
-                    "EVIDENCE\n"
-                    f"{_format_evidence(evidence)}\n\n"
+                    "EVIDENCE FACTS (the only facts you may use)\n"
+                    f"{_format_evidence_facts(evidence, req)}\n\n"
                     "DRAFT TO REWRITE\n"
                     f"{draft}\n\n"
                     "PROBLEMS TO FIX\n"
                     f"{issue_list}\n\n"
-                    "Return only the corrected final section body inside <section> tags."
+                    "Return only the corrected final section body inside <section> tags.\n"
+                    "Do not introduce any new facts, examples, products, dates, or claims."
                 ),
             },
         ],
@@ -892,10 +932,11 @@ async def _expand_via_llm(
                     f"Expand the following draft for the section '{req.section_title}' into a fuller, "
                     "submission-ready proposal section. Keep the same factual grounding, but add more "
                     "implementation depth, phase logic, governance detail, validation approach, risk "
-                    "controls, deliverables, and acceptance framing where the evidence supports them.\n\n"
+                    "controls, deliverables, and acceptance framing only where the evidence facts support them.\n\n"
                     "Do not add commentary, source references, or reasoning. Return only the final "
                     "section body inside <section> tags.\n\n"
-                    f"EVIDENCE\n{_format_evidence(evidence)}\n\n"
+                    "EVIDENCE FACTS (the only facts you may use)\n"
+                    f"{_format_evidence_facts(evidence, req)}\n\n"
                     f"DRAFT\n{draft}"
                 ),
             },
