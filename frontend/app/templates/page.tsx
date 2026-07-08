@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Layers,
   Sparkles,
+  Upload,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { ProposalTemplate, TemplateSection } from "@/lib/types";
@@ -26,9 +27,11 @@ export default function TemplatesPage() {
   const [discovered, setDiscovered] = useState<ProposalTemplate[]>([]);
   const [user, setUser] = useState<ProposalTemplate[]>([]);
   const [editing, setEditing] = useState<ProposalTemplate | null>(null);
+  const [artifacts, setArtifacts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [discovering, setDiscovering] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [parsing, setParsing] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -36,6 +39,7 @@ export default function TemplatesPage() {
       const res = await api.listTemplates();
       setDiscovered(res.discovered);
       setUser(res.user);
+      setArtifacts(res.artifacts || []);
     } finally {
       setLoading(false);
     }
@@ -93,6 +97,17 @@ export default function TemplatesPage() {
     await refresh();
   }
 
+  async function onParseTemplate(file: File | null) {
+    if (!file) return;
+    setParsing(true);
+    try {
+      await api.parseTemplate(file);
+      await refresh();
+    } finally {
+      setParsing(false);
+    }
+  }
+
   function updateSection(i: number, patch: Partial<TemplateSection>) {
     if (!editing) return;
     const sections = editing.sections.map((s, idx) =>
@@ -117,6 +132,16 @@ export default function TemplatesPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm">
+            <Upload className="h-4 w-4" />
+            {parsing ? "Parsing…" : "Parse DOCX"}
+            <input
+              type="file"
+              accept=".docx"
+              className="hidden"
+              onChange={(e) => onParseTemplate(e.target.files?.[0] || null)}
+            />
+          </label>
           <Button variant="outline" size="sm" onClick={rediscover} disabled={discovering}>
             {discovering ? <Spinner /> : <RefreshCw className="h-4 w-4" />}
             Re-discover
@@ -226,6 +251,33 @@ export default function TemplatesPage() {
         </div>
       ) : (
         <div className="space-y-8">
+          {artifacts.length > 0 && (
+            <section>
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Parsed Template Artifacts
+              </h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {artifacts.map((artifact) => (
+                  <Card key={artifact.template_id} className="border-border/70">
+                    <CardContent className="space-y-2 pt-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-medium">{artifact.name || "Untitled template"}</div>
+                        <Badge tone="accent">{artifact.proposal_family || "General"}</Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground break-all">
+                        {artifact.source_file}
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        <Badge tone="muted">{artifact.sections?.length || 0} sections</Badge>
+                        <Badge tone="muted">{artifact.images?.length || 0} images</Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
+
           {user.length > 0 && (
             <section>
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">

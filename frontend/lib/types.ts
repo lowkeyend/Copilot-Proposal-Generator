@@ -63,6 +63,60 @@ export interface ProposalTemplate {
   updated_at?: string;
 }
 
+export interface TemplateParagraph {
+  text: string;
+  style: string;
+  level: number;
+}
+
+export interface TemplateTable {
+  index: number;
+  rows: number;
+  cols: number;
+  style: string;
+  caption: string;
+}
+
+export interface TemplateImage {
+  index: number;
+  filename: string;
+  width: number;
+  height: number;
+  caption: string;
+  section: string;
+  page: number;
+  purpose: string;
+  semantic_tags: string[];
+}
+
+export interface TemplateSectionNode {
+  title: string;
+  level: number;
+  paragraphs: TemplateParagraph[];
+  tables: TemplateTable[];
+  images: TemplateImage[];
+  subsections: TemplateSectionNode[];
+}
+
+export interface TemplateDocumentArtifact {
+  template_id: string;
+  name: string;
+  source_file: string;
+  proposal_family: string;
+  sections: TemplateSectionNode[];
+  images: TemplateImage[];
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TemplateParseResponse {
+  artifact: TemplateDocumentArtifact;
+  section_count: number;
+  image_count: number;
+  table_count: number;
+}
+
 export interface TocSection {
   id: string;
   title: string;

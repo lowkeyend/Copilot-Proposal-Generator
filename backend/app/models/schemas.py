@@ -126,6 +126,71 @@ class ProposalTemplate(BaseModel):
     updated_at: str = Field(default_factory=_now)
 
 
+class TemplateParagraph(BaseModel):
+    text: str = ""
+    style: str = ""
+    level: int = 0
+
+
+class TemplateTableCell(BaseModel):
+    text: str = ""
+    row: int = 0
+    col: int = 0
+
+
+class TemplateTable(BaseModel):
+    index: int = 0
+    rows: int = 0
+    cols: int = 0
+    style: str = ""
+    caption: str = ""
+
+
+class TemplateImage(BaseModel):
+    index: int = 0
+    filename: str = ""
+    width: float = 0.0
+    height: float = 0.0
+    caption: str = ""
+    section: str = ""
+    page: int = 0
+    purpose: str = ""
+    semantic_tags: list[str] = Field(default_factory=list)
+
+
+class TemplateSectionNode(BaseModel):
+    title: str
+    level: int = 1
+    paragraphs: list[TemplateParagraph] = Field(default_factory=list)
+    tables: list[TemplateTable] = Field(default_factory=list)
+    images: list[TemplateImage] = Field(default_factory=list)
+    subsections: list["TemplateSectionNode"] = Field(default_factory=list)
+
+
+class TemplateDocumentArtifact(BaseModel):
+    template_id: str = Field(default_factory=_uid)
+    name: str = ""
+    source_file: str = ""
+    proposal_family: str = ""
+    sections: list[TemplateSectionNode] = Field(default_factory=list)
+    images: list[TemplateImage] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(default_factory=_now)
+    updated_at: str = Field(default_factory=_now)
+
+
+class TemplateParseRequest(BaseModel):
+    file_name: str = ""
+    proposal_family: str = ""
+
+
+class TemplateParseResponse(BaseModel):
+    artifact: TemplateDocumentArtifact
+    section_count: int = 0
+    image_count: int = 0
+    table_count: int = 0
+
+
 class SuggestTemplateRequest(BaseModel):
     prompt: str
     context: ClientContext

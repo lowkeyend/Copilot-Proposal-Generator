@@ -24,6 +24,7 @@ from app.models.schemas import (
     ProposalTemplate,
     ProposalVersion,
     SectionResult,
+    TemplateDocumentArtifact,
 )
 
 _lock = threading.Lock()
@@ -42,6 +43,10 @@ class StorageService:
     @property
     def templates_file(self) -> Path:
         return self.settings.storage_path / "templates.json"
+
+    @property
+    def template_artifacts_file(self) -> Path:
+        return self.settings.storage_path / "template_artifacts.json"
 
     def _proposal_path(self, proposal_id: str) -> Path:
         return self.proposals_dir / f"{proposal_id}.json"
@@ -158,6 +163,34 @@ class StorageService:
             return False
         self.save_templates(new)
         return True
+
+    # ---- template artifacts ----
+    def load_template_artifacts(self) -> list[TemplateDocumentArtifact]:
+        if not self.template_artifacts_file.exists():
+            return []
+        try:
+            raw = json.loads(self.template_artifacts_file.read_text(encoding="utf-8"))
+            return [TemplateDocumentArtifact.model_validate(t) for t in raw]
+        except Exception:
+            return []
+
+    def save_template_artifacts(self, artifacts: list[TemplateDocumentArtifact]) -> None:
+        with _lock:
+            self.template_artifacts_file.write_text(
+                json.dumps([a.model_dump() for a in artifacts], indent=2),
+                encoding="utf-8",
+            )
+
+    def upsert_template_artifact(self, artifact: TemplateDocumentArtifact) -> TemplateDocumentArtifact:
+        artifacts = self.load_template_artifacts()
+        for i, item in enumerate(artifacts):
+            if item.template_id == artifact.template_id:
+                artifacts[i] = artifact
+                self.save_template_artifacts(artifacts)
+                return artifact
+        artifacts.append(artifact)
+        self.save_template_artifacts(artifacts)
+        return artifact
 
 
 _storage_singleton: Optional[StorageService] = None

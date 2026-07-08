@@ -37,6 +37,9 @@ from app.models.schemas import (
     PlannerResponse,
     ProposalRecord,
     ProposalTemplate,
+    TemplateDocumentArtifact,
+    TemplateParseResponse,
+    TemplateParseRequest,
     ProposalVersion,
     RfpParseResponse,
     ReviewProposalRequest,
@@ -54,6 +57,7 @@ from app.agents.section_writer import run_section_writer
 from app.agents.template_agent import run_template_agent
 from app.agents.toc_agent import run_toc_agent
 from app.agents.pattern_discovery import technical_upgrade_template
+from app.services.template_parser_service import parse_template_docx
 
 from app.services.document_query_service import answer_document_query
 from app.services.docx_service import get_composer
@@ -441,10 +445,13 @@ def download(filename: str) -> FileResponse:
 # --------------------------------------------------------------------------
 @router.get("/templates", tags=["templates"])
 def list_templates() -> dict:
-    template = technical_upgrade_template()
+    discovered = [t.model_dump() for t in load_registry()]
+    user_templates = [t.model_dump() for t in get_storage().load_templates()]
+    artifacts = [a.model_dump() for a in get_storage().load_template_artifacts()]
     return {
-        "user": [],
-        "discovered": [template.model_dump()],
+        "user": user_templates,
+        "discovered": discovered,
+        "artifacts": artifacts,
     }
 
 
@@ -458,6 +465,26 @@ def upsert_template(template: ProposalTemplate) -> ProposalTemplate:
 def delete_template(template_id: str) -> GenericResponse:
     ok = get_storage().delete_template(template_id)
     return GenericResponse(ok=ok, detail="deleted" if ok else "not found")
+
+
+@router.post("/templates/parse", response_model=TemplateParseResponse, tags=["templates"])
+async def parse_template(file: UploadFile = File(...), proposal_family: str = Form("Temenos")) -> TemplateParseResponse:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Template file is required.")
+    if not file.filename.lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Only .docx template files are supported.")
+    settings.templates_path.mkdir(parents=True, exist_ok=True)
+    target = settings.templates_path / file.filename
+    content = await file.read()
+    target.write_bytes(content)
+    artifact = parse_template_docx(target, proposal_family=proposal_family)
+    get_storage().upsert_template_artifact(artifact)
+    return TemplateParseResponse(
+        artifact=artifact,
+        section_count=len(artifact.sections),
+        image_count=len(artifact.images),
+        table_count=sum(len(sec.tables) for sec in artifact.sections),
+    )
 
 
 # --------------------------------------------------------------------------

@@ -14,6 +14,8 @@ import type {
   OpenRouterSettingsUpdate,
   OpenRouterSettingsCheckResponse,
   ProposalTemplate,
+  TemplateDocumentArtifact,
+  TemplateParseResponse,
   PlannerResponse,
   RfpParseResponse,
   ReviewIssue,
@@ -274,7 +276,7 @@ export const api = {
     }),
 
   listTemplates: () =>
-    jsonFetch<{ user: ProposalTemplate[]; discovered: ProposalTemplate[] }>(
+    jsonFetch<{ user: ProposalTemplate[]; discovered: ProposalTemplate[]; artifacts: TemplateDocumentArtifact[] }>(
       "/templates"
     ),
 
@@ -286,6 +288,13 @@ export const api = {
 
   deleteTemplate: (id: string) =>
     jsonFetch<{ ok: boolean }>(`/templates/${id}`, { method: "DELETE" }),
+
+  parseTemplate: (file: File, proposalFamily = "Temenos") => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("proposal_family", proposalFamily);
+    return uploadFetch<TemplateParseResponse>("/templates/parse", form);
+  },
 
   discoverPatterns: () =>
     jsonFetch<{ count: number; patterns: ProposalTemplate[] }>(
