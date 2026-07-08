@@ -674,6 +674,15 @@ def _should_use_reference_compiler(req: GenerateSectionRequest) -> bool:
     )
 
 
+def _reference_compiler_available(req: GenerateSectionRequest) -> bool:
+    if not _should_use_reference_compiler(req):
+        return False
+    heading_map = _local_document_heading_map(req)
+    if heading_map:
+        return True
+    return bool(get_settings().proposal_template_path.exists())
+
+
 def _local_section_content(req: GenerateSectionRequest, evidence: list[EvidenceChunk], length: str) -> str:
     client = req.context.client_name or "the client"
     industry = req.context.industry or "the industry"
@@ -1555,6 +1564,18 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     if req.instruction:
         instruction_block = f"REVISION INSTRUCTION (follow precisely):\n{req.instruction}"
 
+    if _reference_compiler_available(req):
+        compiled = _compile_reference_layout(req, evidence)
+        if compiled:
+            compiled = _remove_meta_language(compiled)
+            compiled = _apply_context_guardrails(compiled, req)
+            return SectionResult(
+                title=req.section_title,
+                content=_strip_leading_heading(compiled, req.section_title),
+                evidence=evidence,
+                model=get_llm().resolve_model(req.model),
+            )
+
     if req.require_evidence and not evidence:
         return SectionResult(
             title=req.section_title,
@@ -1565,20 +1586,6 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
             evidence=[],
             model=get_llm().resolve_model(req.model),
         )
-
-    if _should_use_reference_compiler(req):
-        compiled = _compile_reference_layout(req, evidence)
-        if compiled:
-            compiled = _remove_meta_language(compiled)
-            compiled = _apply_context_guardrails(compiled, req)
-            issues = _validation_issues(compiled, req, evidence)
-            if not issues or issues == ["output is too short for a reference-structured section"]:
-                return SectionResult(
-                    title=req.section_title,
-                    content=_strip_leading_heading(compiled, req.section_title),
-                    evidence=evidence,
-                    model=get_llm().resolve_model(req.model),
-                )
 
     llm = get_llm()
     if not llm.available:
