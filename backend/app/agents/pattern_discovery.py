@@ -180,9 +180,10 @@ def load_registry() -> list[ProposalTemplate]:
         return _merge_curated(discover_patterns())
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-        return _merge_curated([ProposalTemplate.model_validate(t) for t in raw.get("patterns", [])])
+        curated = [ProposalTemplate.model_validate(t) for t in raw.get("patterns", [])]
+        return _keep_only_alkuraimi(curated)
     except Exception:
-        return _merge_curated(discover_patterns())
+        return _keep_only_alkuraimi(discover_patterns())
 
 
 def _save_registry(templates: list[ProposalTemplate]) -> None:
@@ -356,15 +357,19 @@ def _curated_patterns() -> list[ProposalTemplate]:
 
 
 def _merge_curated(patterns: list[ProposalTemplate]) -> list[ProposalTemplate]:
-    curated = _curated_patterns() + _extra_curated_patterns()
-    seen = {(t.name.lower(), t.proposal_family.lower()) for t in patterns}
-    merged = list(patterns)
-    for template in curated:
-        key = (template.name.lower(), template.proposal_family.lower())
-        if key not in seen:
-            merged.append(template)
-    merged.sort(key=lambda t: (t.support, t.proposal_family), reverse=True)
-    return merged
+    return _keep_only_alkuraimi(patterns)
+
+
+def _keep_only_alkuraimi(patterns: list[ProposalTemplate]) -> list[ProposalTemplate]:
+    preferred = [
+        template
+        for template in patterns
+        if template.name.strip().lower() == "technical upgrade"
+        and template.proposal_family.strip().lower() == "temenos"
+    ]
+    if preferred:
+        return preferred
+    return _extra_curated_patterns()
 
 
 def _extra_curated_patterns() -> list[ProposalTemplate]:

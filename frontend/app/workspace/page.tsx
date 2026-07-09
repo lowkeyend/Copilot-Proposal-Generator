@@ -63,6 +63,7 @@ export default function WorkspacePage() {
   const [exportUrl, setExportUrl] = useState("");
   const [templateOptions, setTemplateOptions] = useState<ProposalTemplate[]>([]);
   const [documentOptions, setDocumentOptions] = useState<string[]>([]);
+  const [parsedArtifacts, setParsedArtifacts] = useState<any[]>([]);
 
   useEffect(() => {
     api.listTemplates()
@@ -72,6 +73,7 @@ export default function WorkspacePage() {
         );
         setTemplateOptions(all);
         if (!store.template && all.length) store.setTemplate(all[0]);
+        setParsedArtifacts(res.artifacts || []);
       })
       .catch(() => setTemplateOptions([]));
     api.listKnowledgeChunks(2000)
@@ -372,6 +374,39 @@ export default function WorkspacePage() {
           </div>
         </CardContent>
       </Card>
+
+      {parsedArtifacts.length > 0 && (
+        <Card className="mb-5 border-dashed border-accent/30 bg-accent/5">
+          <CardContent className="space-y-3 pt-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-muted-foreground">
+                  Parsed Template
+                </div>
+                <h3 className="mt-1 text-sm font-semibold">Available parsed DOCX templates</h3>
+              </div>
+              <Badge tone="accent">{parsedArtifacts.length}</Badge>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {parsedArtifacts.map((artifact) => (
+                <div key={artifact.template_id} className="rounded-xl border border-border bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium">{artifact.name || "Untitled template"}</div>
+                    <Badge tone="muted">{artifact.proposal_family || "General"}</Badge>
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground break-all">
+                    {artifact.source_file}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    <Badge tone="muted">{artifact.sections?.length || 0} sections</Badge>
+                    <Badge tone="muted">{artifact.images?.length || 0} images</Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
         {/* Left rail */}
