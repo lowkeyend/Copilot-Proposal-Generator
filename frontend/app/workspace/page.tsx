@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useProposalStore } from "@/lib/store";
-import type { ProposalTemplate, ReviewIssue, SectionResult } from "@/lib/types";
+import type { ProposalTemplate, ReviewIssue, SectionResult, TemplateDocumentArtifact } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -61,7 +61,7 @@ export default function WorkspacePage() {
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState("");
-  const [templateOptions, setTemplateOptions] = useState<ProposalTemplate[]>([]);
+  const [templateOptions, setTemplateOptions] = useState<TemplateDocumentArtifact[]>([]);
   const [documentOptions, setDocumentOptions] = useState<string[]>([]);
   const [parsedArtifacts, setParsedArtifacts] = useState<any[]>([]);
   const [masterPrompt, setMasterPrompt] = useState(store.prompt);
@@ -72,8 +72,9 @@ export default function WorkspacePage() {
         const all = [...res.user, ...res.discovered].sort((a, b) =>
           `${a.proposal_family} ${a.name}`.localeCompare(`${b.proposal_family} ${b.name}`)
         );
-        setTemplateOptions(all);
-        if (!store.template && all.length) store.setTemplate(all[0]);
+        setTemplateOptions((res.artifacts || []).sort((a, b) =>
+          `${a.proposal_family} ${a.name}`.localeCompare(`${b.proposal_family} ${b.name}`)
+        ));
         setParsedArtifacts(res.artifacts || []);
       })
       .catch(() => setTemplateOptions([]));
@@ -276,7 +277,7 @@ export default function WorkspacePage() {
   }
 
   const hasContent = store.sections.some((s) => s.content);
-  const selectedTemplate = store.template || templateOptions[0] || null;
+  const selectedTemplate = templateOptions[0] || null;
 
   useEffect(() => {
     setMasterPrompt(store.prompt);
@@ -338,26 +339,20 @@ export default function WorkspacePage() {
                 Template
               </label>
               <Select
-                value={selectedTemplate?.id || ""}
+                value={selectedTemplate?.template_id || ""}
                 onChange={(e) => {
-                  const next = templateOptions.find((t) => t.id === e.target.value) || null;
-                  store.setTemplate(next);
+                  const next = templateOptions.find((t) => t.template_id === e.target.value) || null;
                   if (next?.proposal_family) store.setProposalFamily(next.proposal_family);
                   if (next?.sections?.length) {
                     store.setToc(
-                      next.sections.map((s) => ({
-                        id: s.title,
-                        title: s.title,
-                        keywords: s.keywords || [],
-                        description: s.description || "",
-                      }))
+                      next.sections.map((s) => ({ id: s.title, title: s.title, keywords: [], description: "" }))
                     );
                   }
                 }}
               >
                 <option value="">Select a template</option>
                 {templateOptions.map((t) => (
-                  <option key={t.id} value={t.id}>
+                  <option key={t.template_id} value={t.template_id}>
                     {t.proposal_family} - {t.name}
                   </option>
                 ))}
