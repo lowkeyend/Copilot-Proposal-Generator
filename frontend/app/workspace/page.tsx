@@ -53,8 +53,6 @@ export default function WorkspacePage() {
   ]);
 
   const [busySection, setBusySection] = useState<string | null>(null);
-  const [generatingAll, setGeneratingAll] = useState(false);
-  const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState("");
 
   // drawers
@@ -104,13 +102,6 @@ export default function WorkspacePage() {
     [store.context]
   );
 
-  const baseReq = () => ({
-    prompt: store.prompt,
-    context: store.context,
-    proposal_family: store.proposalFamily,
-    model: store.model,
-  });
-
   async function genOne(tocId: string, instruction = ""): Promise<SectionResult> {
     const toc = store.toc.find((t) => t.id === tocId);
     const existing = store.sections.find((s) => s.id === tocId);
@@ -133,77 +124,6 @@ export default function WorkspacePage() {
     res.id = tocId;
     if (existing?.locked) res.locked = true;
     return res;
-  }
-
-  async function generateAll() {
-    setError("");
-    if (store.toc.length === 0) {
-      setError("Add at least one section to the plan first.");
-      return;
-    }
-    setGeneratingAll(true);
-    const targets = store.toc.filter((t) => {
-      const s = store.sections.find((x) => x.id === t.id);
-      return !s?.locked;
-    });
-    setProgress({ done: 0, total: targets.length });
-
-    // Seed placeholders in TOC order so cards appear immediately.
-    const seeded: SectionResult[] = store.toc.map((t) => {
-      const ex = store.sections.find((s) => s.id === t.id);
-      return (
-        ex || {
-          id: t.id,
-          title: t.title,
-          content: "",
-          evidence: [],
-          locked: false,
-          model: "",
-          generated_at: "",
-        }
-      );
-    });
-    store.setSections(seeded);
-    const generatedSections = [...seeded];
-
-    try {
-      for (let i = 0; i < targets.length; i++) {
-        const t = targets[i];
-        setBusySection(t.id);
-        const res = await genOne(t.id);
-        store.upsertSection(res);
-        const existingIndex = generatedSections.findIndex((s) => s.id === res.id);
-        if (existingIndex >= 0) {
-          generatedSections[existingIndex] = res;
-        } else {
-          generatedSections.push(res);
-        }
-        setProgress({ done: i + 1, total: targets.length });
-      }
-      // persist a saved proposal + initial version
-      const persisted = await api.persistProposal(
-        {
-          prompt: store.prompt,
-          context: store.context,
-          proposal_family: store.proposalFamily,
-          toc: store.toc,
-          model: store.model,
-          top_k: store.quality.top_k,
-          include_temenos_official: store.quality.include_temenos_official,
-          use_hybrid_retrieval: store.quality.use_hybrid_retrieval,
-          detail_level: store.quality.detail_level,
-          require_evidence: store.quality.require_evidence,
-        },
-        generatedSections
-      );
-      store.setProposalId(persisted.proposal_id);
-      store.setSections(persisted.sections);
-    } catch (e: any) {
-      setError(e.message || "Generation failed.");
-    } finally {
-      setBusySection(null);
-      setGeneratingAll(false);
-    }
   }
 
   async function regenerate(sectionId: string, instruction: string) {
@@ -258,6 +178,26 @@ export default function WorkspacePage() {
     }
   }
 
+  function flattenTemplateSections(nodes: TemplateSectionNode[]): TemplateSectionNode[] {
+    const out: TemplateSectionNode[] = [];
+    for (const node of nodes || []) {
+      out.push(node);
+      if (node.subsections?.length) {
+        out.push(...flattenTemplateSections(node.subsections));
+      }
+    }
+    return out;
+  }
+
+  function contentFromTemplate(node: TemplateSectionNode): string {
+    const paragraphs = (node.paragraphs || []).map((p) => p.text).filter(Boolean);
+    const body = paragraphs.join("\n\n");
+    const subheads = (node.subsections || [])
+      .map((s) => `## ${s.title}\n\n${contentFromTemplate(s)}`)
+      .filter(Boolean);
+    return [body, ...subheads].filter(Boolean).join("\n\n");
+  }
+
   function resetWorkspace() {
     const confirmed = window.confirm(
       "Reset the workspace? This will clear the prompt, parsed RFP, TOC, generated sections, and current proposal context."
@@ -266,8 +206,6 @@ export default function WorkspacePage() {
     store.resetWorkspace();
     setError("");
     setBusySection(null);
-    setGeneratingAll(false);
-    setProgress({ done: 0, total: 0 });
     setEvidenceFor(null);
     setReviewOpen(false);
     setReviewLoading(false);
@@ -301,8 +239,9 @@ export default function WorkspacePage() {
       store.setProposalFamily(selectedTemplate.proposal_family);
     }
     if (selectedTemplate.sections?.length) {
+      const flattened = flattenTemplateSections(selectedTemplate.sections);
       store.setToc(
-        flattenTemplateSections(selectedTemplate.sections).map((section, idx) => ({
+        flattened.map((section, idx) => ({
           id: `${section.title}-${idx}`,
           title: section.title,
           keywords: section.title
@@ -310,6 +249,17 @@ export default function WorkspacePage() {
             .split(/[^a-z0-9]+/)
             .filter((word) => word.length > 2),
           description: section.paragraphs?.[0]?.text || section.title,
+        }))
+      );
+      store.setSections(
+        flattened.map((section, idx) => ({
+          id: `${section.title}-${idx}`,
+          title: section.title,
+          content: contentFromTemplate(section),
+          evidence: [],
+          locked: true,
+          model: "",
+          generated_at: "",
         }))
       );
     }
@@ -654,34 +604,9 @@ export default function WorkspacePage() {
                 </Select>
               </div>
 
-              <Button
-                className="w-full"
-                onClick={generateAll}
-                disabled={generatingAll}
-              >
-                {generatingAll ? <Spinner /> : <Sparkles className="h-4 w-4" />}
-                {hasContent ? "Regenerate All" : "Generate Proposal"}
-              </Button>
-
-              {generatingAll && (
-                <div className="space-y-1">
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                    <motion.div
-                      className="h-full bg-accent"
-                      animate={{
-                        width: `${
-                          progress.total
-                            ? (progress.done / progress.total) * 100
-                            : 0
-                        }%`,
-                      }}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {progress.done}/{progress.total} sections
-                  </p>
-                </div>
-              )}
+              <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                The selected template is loaded into the canvas automatically. Use the section controls to regenerate any block with a prompt.
+              </div>
 
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <Button
@@ -803,16 +728,10 @@ export default function WorkspacePage() {
             <Card>
               <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
                 <Sparkles className="h-8 w-8 text-accent" />
-                <h2 className="text-lg font-semibold">Ready to generate</h2>
+                <h2 className="text-lg font-semibold">Select a parsed template</h2>
                 <p className="max-w-sm text-sm text-muted-foreground">
-                  Use the template bar and master prompt above, then click{" "}
-                  <strong>Generate Proposal</strong>. Sections are written one at
-                  a time and grounded in your knowledge base.
+                  The chosen parsed template will load here as the editable proposal document. Use section-level Generate controls to change any block.
                 </p>
-                <Button onClick={generateAll} disabled={generatingAll}>
-                  {generatingAll ? <Spinner /> : <Sparkles className="h-4 w-4" />}
-                  Generate Proposal
-                </Button>
               </CardContent>
             </Card>
           )}
