@@ -1370,6 +1370,8 @@ def _validation_issues(
     if schema:
         subheadings = [str(item) for item in schema.get("subheadings", [])]
         minimum_matches = int(schema.get("minimum_matches", 0) or 0)
+        if len(subheadings) >= 4:
+            minimum_matches = min(minimum_matches, 3)
         heading_matches = sum(1 for heading in subheadings if heading.lower() in lowered)
         if minimum_matches and heading_matches < minimum_matches:
             issues.append(

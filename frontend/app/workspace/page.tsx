@@ -64,6 +64,7 @@ export default function WorkspacePage() {
   const [templateOptions, setTemplateOptions] = useState<ProposalTemplate[]>([]);
   const [documentOptions, setDocumentOptions] = useState<string[]>([]);
   const [parsedArtifacts, setParsedArtifacts] = useState<any[]>([]);
+  const [masterPrompt, setMasterPrompt] = useState(store.prompt);
 
   useEffect(() => {
     api.listTemplates()
@@ -277,6 +278,10 @@ export default function WorkspacePage() {
   const hasContent = store.sections.some((s) => s.content);
   const selectedTemplate = store.template || templateOptions[0] || null;
 
+  useEffect(() => {
+    setMasterPrompt(store.prompt);
+  }, [store.prompt]);
+
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
       {/* Header */}
@@ -373,6 +378,24 @@ export default function WorkspacePage() {
             </div>
           </div>
         </CardContent>
+        <div className="border-t border-border px-5 py-4">
+          <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Master Prompt
+          </label>
+          <textarea
+            value={masterPrompt}
+            onChange={(e) => {
+              setMasterPrompt(e.target.value);
+              store.setPrompt(e.target.value);
+            }}
+            rows={4}
+            className="w-full rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none ring-0 focus:border-primary"
+            placeholder="Describe how you want the full proposal to adapt, what should stay static, what should change, and any version replacements..."
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            This prompt applies to the full proposal and is reused whenever you generate or regenerate a section.
+          </p>
+        </div>
       </Card>
 
       {parsedArtifacts.length > 0 && (
@@ -713,13 +736,13 @@ export default function WorkspacePage() {
             </p>
           )}
 
-          {store.sections.length === 0 ? (
+          {store.sections.length === 0 && (
             <Card>
               <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
                 <Sparkles className="h-8 w-8 text-accent" />
                 <h2 className="text-lg font-semibold">Ready to generate</h2>
                 <p className="max-w-sm text-sm text-muted-foreground">
-                  Review and edit the plan on the left, pick a model, then click{" "}
+                  Use the template bar and master prompt above, then click{" "}
                   <strong>Generate Proposal</strong>. Sections are written one at
                   a time and grounded in your knowledge base.
                 </p>
@@ -729,24 +752,6 @@ export default function WorkspacePage() {
                 </Button>
               </CardContent>
             </Card>
-          ) : (
-            store.sections.map((section, i) => (
-              <SectionCard
-                key={section.id}
-                section={section}
-                index={i}
-                total={store.sections.length}
-                busy={busySection === section.id}
-                onRegenerate={(instruction) => regenerate(section.id, instruction)}
-                onToggleLock={() =>
-                  store.updateSection(section.id, { locked: !section.locked })
-                }
-                onDelete={() => store.removeSection(section.id)}
-                onMove={(dir) => store.moveSection(section.id, dir)}
-                onEdit={(patch) => store.updateSection(section.id, patch)}
-                onShowEvidence={() => setEvidenceFor(section)}
-              />
-            ))
           )}
         </div>
       </div>

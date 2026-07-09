@@ -197,9 +197,9 @@ export function SectionCard({
                 size="sm"
                 disabled={section.locked || busy}
                 onClick={() => setShowInstruction((v) => !v)}
-                title={section.locked ? "Unlock to regenerate" : "Regenerate"}
+                title={section.locked ? "Unlock to generate" : "Generate"}
               >
-                <RefreshCw className="h-4 w-4" /> Regenerate
+                <RefreshCw className="h-4 w-4" /> Generate
               </Button>
             </div>
           )}
@@ -207,7 +207,7 @@ export function SectionCard({
           {showInstruction && !editing && (
             <div className="mt-3 space-y-2 rounded-md border border-border bg-muted/40 p-3">
               <Input
-                placeholder='Optional instruction, e.g. "make it shorter"'
+                placeholder='Optional prompt, e.g. "change R16 to R26"'
                 value={instruction}
                 onChange={(e) => setInstruction(e.target.value)}
               />
@@ -228,7 +228,7 @@ export function SectionCard({
                     setInstruction("");
                   }}
                 >
-                  <RefreshCw className="h-4 w-4" /> Regenerate
+                  <RefreshCw className="h-4 w-4" /> Generate
                 </Button>
               </div>
             </div>
