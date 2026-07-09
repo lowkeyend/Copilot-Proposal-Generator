@@ -314,61 +314,68 @@ export default function WorkspacePage() {
         </div>
       </div>
 
+      <Card className="mb-5 border-primary/20 bg-gradient-to-r from-white via-white to-muted/30">
+        <CardContent className="flex flex-wrap items-end justify-between gap-4 pt-5">
+          <div className="min-w-[280px] flex-1">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-muted-foreground">
+              Workspace Template
+            </div>
+            <h2 className="mt-1 text-lg font-semibold">Select the proposal template and source documents here</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              This is the primary control bar for the browser proposal canvas.
+            </p>
+          </div>
+          <div className="grid min-w-[320px] gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Template
+              </label>
+              <Select
+                value={selectedTemplate?.id || ""}
+                onChange={(e) => {
+                  const next = templateOptions.find((t) => t.id === e.target.value) || null;
+                  store.setTemplate(next);
+                  if (next?.proposal_family) store.setProposalFamily(next.proposal_family);
+                  if (next?.sections?.length) {
+                    store.setToc(
+                      next.sections.map((s) => ({
+                        id: s.title,
+                        title: s.title,
+                        keywords: s.keywords || [],
+                        description: s.description || "",
+                      }))
+                    );
+                  }
+                }}
+              >
+                <option value="">Select a template</option>
+                {templateOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.proposal_family} - {t.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Selected Documents
+              </label>
+              <DropdownMultiSelect
+                label=""
+                options={documentOptions}
+                value={store.context.selected_documents}
+                onChange={(next) => store.setContext({ selected_documents: next })}
+                placeholder="Choose documents"
+                helper="Only selected documents are used when generating sections."
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
         {/* Left rail */}
         <div className="space-y-4">
-          <Card>
-            <CardContent className="space-y-3 pt-5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold">Template & Source Scope</h2>
-                <Badge tone="muted">{templateOptions.length}</Badge>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Template
-                </label>
-                <Select
-                  value={selectedTemplate?.id || ""}
-                  onChange={(e) => {
-                    const next = templateOptions.find((t) => t.id === e.target.value) || null;
-                    store.setTemplate(next);
-                    if (next?.proposal_family) store.setProposalFamily(next.proposal_family);
-                    if (next?.sections?.length) {
-                      store.setToc(
-                        next.sections.map((s) => ({
-                          id: s.title,
-                          title: s.title,
-                          keywords: s.keywords || [],
-                          description: s.description || "",
-                        }))
-                      );
-                    }
-                  }}
-                >
-                  <option value="">Select a template</option>
-                  {templateOptions.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.proposal_family} - {t.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Selected Documents
-                </label>
-                <DropdownMultiSelect
-                  label=""
-                  options={documentOptions}
-                  value={store.context.selected_documents}
-                  onChange={(next) => store.setContext({ selected_documents: next })}
-                  placeholder="Choose documents"
-                  helper="Only selected documents are used when generating sections."
-                />
-              </div>
-            </CardContent>
-          </Card>
-
           <Card>
             <CardContent className="space-y-3 pt-5">
               <div className="flex items-center justify-between">
