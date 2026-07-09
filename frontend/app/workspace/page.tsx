@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useProposalStore } from "@/lib/store";
-import type { ReviewIssue, SectionResult } from "@/lib/types";
+import type { ProposalTemplate, ReviewIssue, SectionResult } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +61,33 @@ export default function WorkspacePage() {
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState("");
+  const [templateOptions, setTemplateOptions] = useState<ProposalTemplate[]>([]);
+  const [documentOptions, setDocumentOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    api.listTemplates()
+      .then((res) => {
+        const all = [...res.user, ...res.discovered].sort((a, b) =>
+          `${a.proposal_family} ${a.name}`.localeCompare(`${b.proposal_family} ${b.name}`)
+        );
+        setTemplateOptions(all);
+        if (!store.template && all.length) store.setTemplate(all[0]);
+      })
+      .catch(() => setTemplateOptions([]));
+    api.listKnowledgeChunks(2000)
+      .then((res) => {
+        const docs = Array.from(
+          new Set(
+            res.chunks
+              .map((chunk) => chunk.source_document || chunk.source_proposal)
+              .filter((value): value is string => Boolean(value && value.trim()))
+          )
+        ).sort((a, b) => a.localeCompare(b));
+        setDocumentOptions(docs);
+      })
+      .catch(() => setDocumentOptions([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const title = useMemo(
     () =>
@@ -246,6 +273,7 @@ export default function WorkspacePage() {
   }
 
   const hasContent = store.sections.some((s) => s.content);
+  const selectedTemplate = store.template || templateOptions[0] || null;
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
@@ -286,9 +314,61 @@ export default function WorkspacePage() {
         </div>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
         {/* Left rail */}
         <div className="space-y-4">
+          <Card>
+            <CardContent className="space-y-3 pt-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold">Template & Source Scope</h2>
+                <Badge tone="muted">{templateOptions.length}</Badge>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Template
+                </label>
+                <Select
+                  value={selectedTemplate?.id || ""}
+                  onChange={(e) => {
+                    const next = templateOptions.find((t) => t.id === e.target.value) || null;
+                    store.setTemplate(next);
+                    if (next?.proposal_family) store.setProposalFamily(next.proposal_family);
+                    if (next?.sections?.length) {
+                      store.setToc(
+                        next.sections.map((s) => ({
+                          id: s.title,
+                          title: s.title,
+                          keywords: s.keywords || [],
+                          description: s.description || "",
+                        }))
+                      );
+                    }
+                  }}
+                >
+                  <option value="">Select a template</option>
+                  {templateOptions.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.proposal_family} - {t.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Selected Documents
+                </label>
+                <DropdownMultiSelect
+                  label=""
+                  options={documentOptions}
+                  value={store.context.selected_documents}
+                  onChange={(next) => store.setContext({ selected_documents: next })}
+                  placeholder="Choose documents"
+                  helper="Only selected documents are used when generating sections."
+                />
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardContent className="space-y-3 pt-5">
               <div className="flex items-center justify-between">
@@ -529,6 +609,62 @@ export default function WorkspacePage() {
 
         {/* Sections */}
         <div className="space-y-4">
+          <Card className="border-border/70 bg-white/85 shadow-sm">
+            <CardContent className="space-y-3 pt-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Browser Proposal Canvas</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Edit the proposal directly here. Static blocks stay fixed and sections can be regenerated individually.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge tone="muted">{store.sections.length} sections</Badge>
+                  <Badge tone="muted">{store.context.selected_documents.length} docs</Badge>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-border bg-[#fbfbf7] p-4 shadow-inner">
+                <div className="mx-auto max-w-[980px] rounded-[28px] bg-white px-6 py-8 shadow-[0_12px_40px_rgba(15,23,42,0.10)]">
+                  <div className="border-b border-border pb-5">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-muted-foreground">
+                      Proposal
+                    </div>
+                    <h3 className="mt-2 text-2xl font-bold text-primary">{title}</h3>
+                    <div className="mt-2 text-sm text-muted-foreground">
+                      Template: {selectedTemplate ? `${selectedTemplate.proposal_family} - ${selectedTemplate.name}` : "None selected"}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Date: {new Date().toLocaleDateString()}
+                    </div>
+                  </div>
+                  <div className="mt-5 space-y-4">
+                    {store.sections.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
+                        Choose a template and documents, then generate sections here.
+                      </div>
+                    ) : (
+                      store.sections.map((section, i) => (
+                        <SectionCard
+                          key={section.id}
+                          section={section}
+                          index={i}
+                          total={store.sections.length}
+                          busy={busySection === section.id}
+                          onRegenerate={(instruction) => regenerate(section.id, instruction)}
+                          onToggleLock={() => store.updateSection(section.id, { locked: !section.locked })}
+                          onDelete={() => store.removeSection(section.id)}
+                          onMove={(dir) => store.moveSection(section.id, dir)}
+                          onEdit={(patch) => store.updateSection(section.id, patch)}
+                          onShowEvidence={() => setEvidenceFor(section)}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {error && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
