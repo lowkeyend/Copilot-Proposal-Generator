@@ -17,7 +17,12 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useProposalStore } from "@/lib/store";
-import type { ProposalTemplate, ReviewIssue, SectionResult, TemplateDocumentArtifact } from "@/lib/types";
+import type {
+  ReviewIssue,
+  SectionResult,
+  TemplateDocumentArtifact,
+  TemplateSectionNode,
+} from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +67,7 @@ export default function WorkspacePage() {
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState("");
   const [templateOptions, setTemplateOptions] = useState<TemplateDocumentArtifact[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [documentOptions, setDocumentOptions] = useState<string[]>([]);
   const [parsedArtifacts, setParsedArtifacts] = useState<any[]>([]);
   const [masterPrompt, setMasterPrompt] = useState(store.prompt);
@@ -69,9 +75,6 @@ export default function WorkspacePage() {
   useEffect(() => {
     api.listTemplates()
       .then((res) => {
-        const all = [...res.user, ...res.discovered].sort((a, b) =>
-          `${a.proposal_family} ${a.name}`.localeCompare(`${b.proposal_family} ${b.name}`)
-        );
         setTemplateOptions((res.artifacts || []).sort((a, b) =>
           `${a.proposal_family} ${a.name}`.localeCompare(`${b.proposal_family} ${b.name}`)
         ));
@@ -277,11 +280,40 @@ export default function WorkspacePage() {
   }
 
   const hasContent = store.sections.some((s) => s.content);
-  const selectedTemplate = templateOptions[0] || null;
+  const selectedTemplate =
+    templateOptions.find((artifact) => artifact.template_id === selectedTemplateId) ||
+    templateOptions[0] ||
+    null;
 
   useEffect(() => {
     setMasterPrompt(store.prompt);
   }, [store.prompt]);
+
+  useEffect(() => {
+    if (!selectedTemplateId && templateOptions.length > 0) {
+      setSelectedTemplateId(templateOptions[0].template_id);
+    }
+  }, [selectedTemplateId, templateOptions]);
+
+  useEffect(() => {
+    if (!selectedTemplate) return;
+    if (selectedTemplate.proposal_family) {
+      store.setProposalFamily(selectedTemplate.proposal_family);
+    }
+    if (selectedTemplate.sections?.length) {
+      store.setToc(
+        flattenTemplateSections(selectedTemplate.sections).map((section, idx) => ({
+          id: `${section.title}-${idx}`,
+          title: section.title,
+          keywords: section.title
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .filter((word) => word.length > 2),
+          description: section.paragraphs?.[0]?.text || section.title,
+        }))
+      );
+    }
+  }, [selectedTemplateId]);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
@@ -341,13 +373,7 @@ export default function WorkspacePage() {
               <Select
                 value={selectedTemplate?.template_id || ""}
                 onChange={(e) => {
-                  const next = templateOptions.find((t) => t.template_id === e.target.value) || null;
-                  if (next?.proposal_family) store.setProposalFamily(next.proposal_family);
-                  if (next?.sections?.length) {
-                    store.setToc(
-                      next.sections.map((s) => ({ id: s.title, title: s.title, keywords: [], description: "" }))
-                    );
-                  }
+                  setSelectedTemplateId(e.target.value);
                 }}
               >
                 <option value="">Select a template</option>
@@ -419,6 +445,48 @@ export default function WorkspacePage() {
                     <Badge tone="muted">{artifact.sections?.length || 0} sections</Badge>
                     <Badge tone="muted">{artifact.images?.length || 0} images</Badge>
                   </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {selectedTemplate && (
+        <Card className="mb-5 border-border/70 bg-white">
+          <CardContent className="space-y-3 pt-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-muted-foreground">
+                  Selected Template Preview
+                </div>
+                <h3 className="mt-1 text-sm font-semibold">
+                  {selectedTemplate.proposal_family} - {selectedTemplate.name}
+                </h3>
+              </div>
+              <Badge tone="accent">{flattenTemplateSections(selectedTemplate.sections).length} sections</Badge>
+            </div>
+            <div className="space-y-3">
+              {flattenTemplateSections(selectedTemplate.sections).map((section, idx) => (
+                <div key={`${section.title}-${idx}`} className="rounded-xl border border-border bg-muted/20 p-3">
+                  <div className="text-sm font-semibold">{section.title}</div>
+                  {section.paragraphs?.length > 0 && (
+                    <div className="mt-2 space-y-2 text-sm text-muted-foreground">
+                      {section.paragraphs.slice(0, 3).map((p, i) => (
+                        <p key={i}>{p.text}</p>
+                      ))}
+                    </div>
+                  )}
+                  {section.subsections?.length > 0 && (
+                    <div className="mt-2 space-y-2 border-t border-border pt-2">
+                      {section.subsections.slice(0, 6).map((sub, i) => (
+                        <div key={i} className="text-xs text-muted-foreground">
+                          <span className="font-medium text-foreground">{sub.title}:</span>{" "}
+                          {sub.paragraphs?.[0]?.text || "Section content available in the template"}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -775,4 +843,15 @@ export default function WorkspacePage() {
       />
     </main>
   );
+}
+
+function flattenTemplateSections(nodes: TemplateSectionNode[]): TemplateSectionNode[] {
+  const out: TemplateSectionNode[] = [];
+  for (const node of nodes || []) {
+    out.push(node);
+    if (node.subsections?.length) {
+      out.push(...flattenTemplateSections(node.subsections));
+    }
+  }
+  return out;
 }
