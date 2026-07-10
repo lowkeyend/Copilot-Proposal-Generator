@@ -178,17 +178,6 @@ export default function WorkspacePage() {
     }
   }
 
-  function flattenTemplateSections(nodes: TemplateSectionNode[]): TemplateSectionNode[] {
-    const out: TemplateSectionNode[] = [];
-    for (const node of nodes || []) {
-      out.push(node);
-      if (node.subsections?.length) {
-        out.push(...flattenTemplateSections(node.subsections));
-      }
-    }
-    return out;
-  }
-
   function contentFromTemplate(node: TemplateSectionNode): string {
     const paragraphs = (node.paragraphs || []).map((p) => p.text).filter(Boolean);
     const body = paragraphs.join("\n\n");
@@ -239,9 +228,8 @@ export default function WorkspacePage() {
       store.setProposalFamily(selectedTemplate.proposal_family);
     }
     if (selectedTemplate.sections?.length) {
-      const flattened = flattenTemplateSections(selectedTemplate.sections);
       store.setToc(
-        flattened.map((section, idx) => ({
+        selectedTemplate.sections.map((section, idx) => ({
           id: `${section.title}-${idx}`,
           title: section.title,
           keywords: section.title
@@ -252,7 +240,7 @@ export default function WorkspacePage() {
         }))
       );
       store.setSections(
-        flattened.map((section, idx) => ({
+        selectedTemplate.sections.map((section, idx) => ({
           id: `${section.title}-${idx}`,
           title: section.title,
           content: contentFromTemplate(section),
@@ -395,48 +383,6 @@ export default function WorkspacePage() {
                     <Badge tone="muted">{artifact.sections?.length || 0} sections</Badge>
                     <Badge tone="muted">{artifact.images?.length || 0} images</Badge>
                   </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {selectedTemplate && (
-        <Card className="mb-5 border-border/70 bg-white">
-          <CardContent className="space-y-3 pt-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-muted-foreground">
-                  Selected Template Preview
-                </div>
-                <h3 className="mt-1 text-sm font-semibold">
-                  {selectedTemplate.proposal_family} - {selectedTemplate.name}
-                </h3>
-              </div>
-              <Badge tone="accent">{flattenTemplateSections(selectedTemplate.sections).length} sections</Badge>
-            </div>
-            <div className="space-y-3">
-              {flattenTemplateSections(selectedTemplate.sections).map((section, idx) => (
-                <div key={`${section.title}-${idx}`} className="rounded-xl border border-border bg-muted/20 p-3">
-                  <div className="text-sm font-semibold">{section.title}</div>
-                  {section.paragraphs?.length > 0 && (
-                    <div className="mt-2 space-y-2 text-sm text-muted-foreground">
-                      {section.paragraphs.slice(0, 3).map((p, i) => (
-                        <p key={i}>{p.text}</p>
-                      ))}
-                    </div>
-                  )}
-                  {section.subsections?.length > 0 && (
-                    <div className="mt-2 space-y-2 border-t border-border pt-2">
-                      {section.subsections.slice(0, 6).map((sub, i) => (
-                        <div key={i} className="text-xs text-muted-foreground">
-                          <span className="font-medium text-foreground">{sub.title}:</span>{" "}
-                          {sub.paragraphs?.[0]?.text || "Section content available in the template"}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
