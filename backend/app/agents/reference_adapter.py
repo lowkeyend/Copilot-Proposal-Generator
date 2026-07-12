@@ -29,6 +29,14 @@ _MARKETING_PHRASES = (
     "industry leading",
 )
 
+_KNOWN_REFERENCE_CLIENTS = (
+    "Alkuraimi Bank",
+    "Alkuraimi Islamic Bank",
+    "Al Kuraimi Bank",
+    "Bank White",
+    "Bank of Dubai",
+)
+
 
 def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip())
@@ -36,6 +44,32 @@ def _clean(text: str) -> str:
 
 def _normalized_words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", (text or "").lower())
+
+
+def _reference_client_candidates(text: str) -> list[str]:
+    found: list[str] = []
+    corpus = text or ""
+    for name in _KNOWN_REFERENCE_CLIENTS:
+        if re.search(re.escape(name), corpus, flags=re.IGNORECASE):
+            found.append(name)
+    for match in re.findall(r"\b([A-Z][A-Za-z&.\-']+(?:\s+[A-Z][A-Za-z&.\-']+){0,4}\s+Bank)\b", corpus):
+        candidate = _clean(match)
+        if len(candidate.split()) >= 2 and candidate not in found:
+            found.append(candidate)
+    return found
+
+
+def _apply_client_name_guardrail(text: str, req: AdaptSectionRequest) -> str:
+    client_name = _clean(req.context.client_name)
+    if not client_name:
+        return text.strip()
+    guarded = text
+    for candidate in _reference_client_candidates(req.reference_content):
+        if candidate.lower() == client_name.lower():
+            continue
+        guarded = re.sub(re.escape(candidate), client_name, guarded, flags=re.IGNORECASE)
+    guarded = re.sub(r"\bthe bank\b", client_name, guarded, flags=re.IGNORECASE) if client_name.lower().startswith("bank ") else guarded
+    return guarded.strip()
 
 
 def _markdown_headings(text: str) -> list[str]:
@@ -293,6 +327,7 @@ Rules:
     )
     if _needs_retry(content, req):
         content = await _retry_adaptation(req, brief, evidence_lines, content)
+    content = _apply_client_name_guardrail(content, req)
     notes = _validate_output(content, req, brief)
     section = SectionResult(
         title=req.section_title,
