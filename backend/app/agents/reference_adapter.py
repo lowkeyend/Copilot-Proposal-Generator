@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from difflib import SequenceMatcher
 
 from app.agents.retrieval_agent import retrieve_for_section
 from app.models.schemas import (
@@ -35,6 +36,18 @@ _KNOWN_REFERENCE_CLIENTS = (
     "Al Kuraimi Bank",
     "Bank White",
     "Bank of Dubai",
+)
+
+_PATCH_TRIGGER_WORDS = (
+    "rewrite",
+    "rephrase",
+    "expand",
+    "shorter",
+    "longer",
+    "add",
+    "remove",
+    "change",
+    "tailor",
 )
 
 
@@ -107,6 +120,113 @@ def _prepare_reference_content(req: AdaptSectionRequest) -> str:
             flags=re.IGNORECASE,
         )
     return base
+
+
+def _line_similarity(a: str, b: str) -> float:
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+
+def _patch_heading_versions(line: str, req: AdaptSectionRequest) -> str:
+    current_version = _clean(req.context.intake.current_version)
+    target_version = _clean(req.context.intake.target_version)
+    if not current_version or not target_version:
+        return line
+    updated = re.sub(
+        r"\bTemenos\s+Transact\s+[A-Za-z0-9._-]+(?:\s+TAFJ)?\s+to\s+[A-Za-z0-9._-]+(?:\s+TAFJ)?\b",
+        f"Temenos Transact {current_version} to {target_version}",
+        line,
+        flags=re.IGNORECASE,
+    )
+    updated = re.sub(
+        r"\bR\d+\b(?=.*\bto\b.*\bR\d+\b)",
+        current_version,
+        updated,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    updated = re.sub(
+        r"\bto\s+R\d+\b",
+        f"to {target_version}",
+        updated,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    return updated
+
+
+def _apply_evidence_line_overrides(content: str, req: AdaptSectionRequest, evidence_lines: list[str]) -> str:
+    if not evidence_lines:
+        return content
+    lines = content.splitlines()
+    heading_index = { _clean(line).lstrip("# ").strip().lower(): idx for idx, line in enumerate(lines) if line.strip().startswith("#") }
+    grouped: dict[str, list[str]] = {}
+    for item in evidence_lines:
+        match = re.match(r"\[(.*?)\]\s+(.*)$", item)
+        if not match:
+            continue
+        heading = _clean(match.group(1)).lower()
+        fact = _clean(match.group(2))
+        if not heading or not fact:
+            continue
+        grouped.setdefault(heading, []).append(fact)
+
+    for heading, idx in heading_index.items():
+        candidates = grouped.get(heading, [])
+        if not candidates:
+            continue
+        insert_at = idx + 1
+        while insert_at < len(lines) and lines[insert_at].strip().startswith("#"):
+            insert_at += 1
+        existing_block: list[str] = []
+        cursor = idx + 1
+        while cursor < len(lines) and not lines[cursor].strip().startswith("#"):
+            if lines[cursor].strip():
+                existing_block.append(_clean(lines[cursor]).lstrip("- ").strip())
+            cursor += 1
+        if not existing_block:
+            continue
+        replacement_block: list[str] = []
+        for original in existing_block:
+            best = max(candidates, key=lambda fact: _line_similarity(original, fact))
+            replacement_block.append(best if _line_similarity(original, best) >= 0.45 else original)
+        block_start = idx + 1
+        block_end = block_start
+        while block_end < len(lines) and not lines[block_end].strip().startswith("#"):
+            block_end += 1
+        lines[block_start:block_end] = replacement_block + [""]
+    return "\n".join(lines).strip()
+
+
+def _should_use_patch_only(req: AdaptSectionRequest) -> bool:
+    combined = f"{req.prompt or ''} {req.instruction or ''}".lower()
+    if not combined.strip():
+        return True
+    return not any(word in combined for word in _PATCH_TRIGGER_WORDS)
+
+
+def _deterministic_patch(req: AdaptSectionRequest, evidence_lines: list[str]) -> str:
+    content = _prepare_reference_content(req)
+    lines = content.splitlines()
+    patched: list[str] = []
+    for line in lines:
+        updated = _patch_heading_versions(line, req) if line.strip().startswith("#") else line
+        current_version = _clean(req.context.intake.current_version)
+        target_version = _clean(req.context.intake.target_version)
+        if current_version and target_version and current_version != target_version:
+            updated = re.sub(
+                r"\blatest agreed Temenos release\b",
+                f"{target_version} target release",
+                updated,
+                flags=re.IGNORECASE,
+            )
+            updated = re.sub(
+                r"\btarget Temenos release\b",
+                f"{target_version} target release",
+                updated,
+                flags=re.IGNORECASE,
+            )
+        patched.append(updated)
+    return _apply_evidence_line_overrides("\n".join(patched), req, evidence_lines)
 
 
 def _markdown_headings(text: str) -> list[str]:
@@ -367,6 +487,23 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
     structure = _reference_structure(prepared_reference)
     plan = [AdaptationChange(kind="preserve", detail=item) for item in brief.must_preserve[:6]]
     plan.extend(AdaptationChange(kind="replace", detail=item) for item in brief.must_change[:8])
+
+    if _should_use_patch_only(effective_req):
+        content = _deterministic_patch(effective_req, evidence_lines)
+        notes = _validate_output(content, effective_req, brief)
+        section = SectionResult(
+            title=req.section_title,
+            content=content.strip(),
+            evidence=evidence,
+            locked=False,
+            model=f"{llm.resolve_model(req.model)}:patch",
+        )
+        return AdaptSectionResponse(
+            section=section,
+            brief=brief,
+            change_plan=plan,
+            validation_notes=notes,
+        )
 
     prompt = f"""
 Adapt the reference proposal section into final client-ready proposal content.

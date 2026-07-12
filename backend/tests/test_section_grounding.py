@@ -6,6 +6,7 @@ from app.agents.section_writer import (
     _prune_unsupported_sentences,
     _validation_issues,
 )
+from app.agents.reference_adapter import _deterministic_patch
 from app.models.schemas import ClientContext, EvidenceChunk, GenerateSectionRequest, IntakeProfile
 
 
@@ -180,3 +181,37 @@ def test_compile_reference_layout_for_scope_of_work() -> None:
     assert "## Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ" in compiled
     assert "### Environment Readiness Assessment" in compiled
     assert "### Upgrade Analysis" in compiled
+
+
+def test_deterministic_patch_preserves_scope_structure() -> None:
+    req = _request().model_copy(
+        update={
+            "context": ClientContext(
+                client_name="QIB",
+                industry="Banking",
+                project_type="Technical Upgrade",
+                client_profile="established",
+                canonical_product="Temenos Transact",
+                intake=IntakeProfile(current_version="R20", target_version="R24"),
+            ),
+            "reference_content": (
+                "## Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ\n\n"
+                "SYS will execute a like-for-like technical upgrade of Alkuraimi Bank's Temenos Transact Core Banking platform from the current release to the latest agreed Temenos release.\n\n"
+                "The scope includes:\n\n"
+                "### Environment Readiness Assessment\n\n"
+                "Hardware, operating system, middleware, compiler, and database compatibility assessment\n"
+                "Review of infrastructure readiness for target release\n\n"
+                "### Upgrade Analysis\n\n"
+                "Inventory of existing modules, parameters, local developments, and integrations\n"
+                "Upgrade impact assessment on customizations and interfaces\n"
+            ),
+        }
+    )
+
+    patched = _deterministic_patch(req, [])
+
+    assert "## Core Upgrade: Temenos Transact R20 to R24" in patched
+    assert "QIB" in patched
+    assert "### Environment Readiness Assessment" in patched
+    assert "### Upgrade Analysis" in patched
+    assert "Alkuraimi" not in patched
