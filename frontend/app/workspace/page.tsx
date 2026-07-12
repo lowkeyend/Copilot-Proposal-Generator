@@ -80,6 +80,41 @@ function templateBody(node: TemplateSectionNode): string {
   return [...paragraphs, ...tables, ...subsections].filter(Boolean).join("\n\n");
 }
 
+function applyWorkspaceContextToReference(
+  content: string,
+  clientName: string,
+  currentVersion: string,
+  targetVersion: string
+) {
+  let next = content || "";
+  const normalizedClient = clientName.trim();
+  if (normalizedClient) {
+    const candidates = [
+      /Alkuraimi(?:\s+Islamic)?\s+Bank/gi,
+      /Al\s*Kuraimi(?:\s+Islamic)?\s+Bank/gi,
+      /Bank White/gi,
+      /Bank of Dubai/gi,
+      /\bQIB\b/g,
+    ];
+    for (const pattern of candidates) {
+      next = next.replace(pattern, normalizedClient);
+    }
+  }
+  const fromVersion = currentVersion.trim();
+  const toVersion = targetVersion.trim();
+  if (fromVersion && toVersion && fromVersion !== toVersion) {
+    next = next.replace(
+      /\bfrom\s+release\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b/gi,
+      `from release ${fromVersion} to ${toVersion}`
+    );
+    next = next.replace(
+      /\bfrom\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b/gi,
+      `from ${fromVersion} to ${toVersion}`
+    );
+  }
+  return next;
+}
+
 function assetUrl(path: string) {
   if (!path) return "";
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
@@ -204,7 +239,12 @@ export default function WorkspacePage() {
       selectedTemplate.sections.map((section, idx) => ({
         id: `${section.title}-${idx}`,
         title: section.title,
-        content: templateBody(section),
+        content: applyWorkspaceContextToReference(
+          templateBody(section),
+          store.context.client_name,
+          store.context.intake.current_version,
+          store.context.intake.target_version
+        ),
         evidence: [],
         images: collectSectionImages(section),
         locked: isStaticSection(section.title),
@@ -214,6 +254,32 @@ export default function WorkspacePage() {
     );
     setLoadedTemplateSignature(signature);
   }, [selectedTemplate, loadedTemplateSignature]);
+
+  useEffect(() => {
+    if (!selectedTemplate) return;
+    store.setSections(
+      store.sections.map((section) => {
+        if (section.model !== "reference-template") return section;
+        const referenceNode = referenceSections.get(section.id);
+        if (!referenceNode) return section;
+        return {
+          ...section,
+          title: referenceNode.title,
+          content: applyWorkspaceContextToReference(
+            templateBody(referenceNode),
+            store.context.client_name,
+            store.context.intake.current_version,
+            store.context.intake.target_version
+          ),
+        };
+      })
+    );
+  }, [
+    store.context.client_name,
+    store.context.intake.current_version,
+    store.context.intake.target_version,
+    selectedTemplate,
+  ]);
 
   const title = useMemo(
     () =>
