@@ -2,18 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import {
   ArrowLeft,
-  Sparkles,
-  ShieldCheck,
-  History,
+  Database,
   Download,
   FileText,
-  Layers3,
-  Database,
   Globe2,
+  History,
+  Layers3,
+  ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useProposalStore } from "@/lib/store";
@@ -21,6 +20,7 @@ import type {
   ReviewIssue,
   SectionResult,
   TemplateDocumentArtifact,
+  TemplateImage,
   TemplateSectionNode,
 } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -37,13 +37,58 @@ import { KbStatus } from "@/components/KbStatus";
 import { DropdownMultiSelect } from "@/components/DropdownMultiSelect";
 import { TEMENOS_PRODUCT_OPTIONS } from "@/lib/intakeOptions";
 
+const CLOUD_BASE = "https://fawadsidd17-proposal-copilot-backend.hf.space";
+
 function canonicalProductLabel(values: string[]) {
   return values.filter(Boolean).join(", ");
+}
+
+function isStaticSection(title: string) {
+  const normalized = title.toLowerCase().trim();
+  return normalized === "company profile" || normalized === "case studies";
+}
+
+function collectSectionImages(node: TemplateSectionNode): TemplateImage[] {
+  return [
+    ...(node.images || []),
+    ...(node.subsections || []).flatMap((child) => collectSectionImages(child)),
+  ];
+}
+
+function collectSectionTables(node: TemplateSectionNode): string[] {
+  const current = (node.tables || [])
+    .filter((table) => table.rows > 0 && table.cols > 0)
+    .map((table) => `Table (${table.rows}x${table.cols})${table.caption ? ` - ${table.caption}` : ""}`);
+  return [...current, ...(node.subsections || []).flatMap((child) => collectSectionTables(child))];
+}
+
+function templateBody(node: TemplateSectionNode): string {
+  const paragraphs = (node.paragraphs || []).map((p) => p.text).filter(Boolean);
+  const tables = collectSectionTables(node);
+  const subsections = (node.subsections || [])
+    .map((child) => `## ${child.title}\n\n${templateBody(child)}`)
+    .filter(Boolean);
+  return [...paragraphs, ...tables, ...subsections].filter(Boolean).join("\n\n");
+}
+
+function assetUrl(path: string) {
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  if (typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app")) {
+    return `${CLOUD_BASE}${path}`;
+  }
+  return `http://localhost:8000${path}`;
 }
 
 export default function WorkspacePage() {
   const router = useRouter();
   const store = useProposalStore();
+  const [busySection, setBusySection] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [templateOptions, setTemplateOptions] = useState<TemplateDocumentArtifact[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [documentOptions, setDocumentOptions] = useState<string[]>([]);
+  const [masterPrompt, setMasterPrompt] = useState(store.prompt);
   const [models] = useState([
     "openrouter/free",
     "qwen/qwen3-next-80b-a3b-instruct:free",
@@ -52,10 +97,6 @@ export default function WorkspacePage() {
     "deepseek/deepseek-chat",
   ]);
 
-  const [busySection, setBusySection] = useState<string | null>(null);
-  const [error, setError] = useState("");
-
-  // drawers
   const [evidenceFor, setEvidenceFor] = useState<SectionResult | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -64,19 +105,14 @@ export default function WorkspacePage() {
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState("");
-  const [templateOptions, setTemplateOptions] = useState<TemplateDocumentArtifact[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [documentOptions, setDocumentOptions] = useState<string[]>([]);
-  const [parsedArtifacts, setParsedArtifacts] = useState<any[]>([]);
-  const [masterPrompt, setMasterPrompt] = useState(store.prompt);
 
   useEffect(() => {
     api.listTemplates()
       .then((res) => {
-        setTemplateOptions((res.artifacts || []).sort((a, b) =>
+        const artifacts = (res.artifacts || []).sort((a, b) =>
           `${a.proposal_family} ${a.name}`.localeCompare(`${b.proposal_family} ${b.name}`)
-        ));
-        setParsedArtifacts(res.artifacts || []);
+        );
+        setTemplateOptions(artifacts);
       })
       .catch(() => setTemplateOptions([]));
     api.listKnowledgeChunks(2000)
@@ -91,49 +127,102 @@ export default function WorkspacePage() {
         setDocumentOptions(docs);
       })
       .catch(() => setDocumentOptions([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    setMasterPrompt(store.prompt);
+  }, [store.prompt]);
+
+  useEffect(() => {
+    if (!selectedTemplateId && templateOptions.length > 0) {
+      setSelectedTemplateId(templateOptions[0].template_id);
+    }
+  }, [selectedTemplateId, templateOptions]);
+
+  const selectedTemplate = useMemo(
+    () =>
+      templateOptions.find((artifact) => artifact.template_id === selectedTemplateId) ||
+      templateOptions[0] ||
+      null,
+    [selectedTemplateId, templateOptions]
+  );
+
+  const referenceSections = useMemo(() => {
+    const map = new Map<string, TemplateSectionNode>();
+    (selectedTemplate?.sections || []).forEach((section, idx) => {
+      map.set(`${section.title}-${idx}`, section);
+    });
+    return map;
+  }, [selectedTemplate]);
+
+  useEffect(() => {
+    if (!selectedTemplate) return;
+    if (selectedTemplate.proposal_family) {
+      store.setProposalFamily(selectedTemplate.proposal_family);
+    }
+    if (!selectedTemplate.sections?.length) return;
+    store.setToc(
+      selectedTemplate.sections.map((section, idx) => ({
+        id: `${section.title}-${idx}`,
+        title: section.title,
+        keywords: section.title
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .filter((word) => word.length > 2),
+        description: section.paragraphs?.[0]?.text || section.title,
+      }))
+    );
+    store.setSections(
+      selectedTemplate.sections.map((section, idx) => ({
+        id: `${section.title}-${idx}`,
+        title: section.title,
+        content: templateBody(section),
+        evidence: [],
+        locked: isStaticSection(section.title),
+        model: "reference-template",
+        generated_at: "",
+      }))
+    );
+  }, [selectedTemplate, store]);
 
   const title = useMemo(
     () =>
       store.context.client_name
-        ? `${store.context.client_name} — ${canonicalProductLabel(store.context.canonical_product) || "Proposal"}`
+        ? `${store.context.client_name} - ${canonicalProductLabel(store.context.canonical_product) || "Proposal"}`
         : canonicalProductLabel(store.context.canonical_product) || "Untitled Proposal",
     [store.context]
   );
 
-  async function genOne(tocId: string, instruction = ""): Promise<SectionResult> {
-    const toc = store.toc.find((t) => t.id === tocId);
-    const existing = store.sections.find((s) => s.id === tocId);
-    const sectionTitle = toc?.title || existing?.title || "Section";
-    const res = await api.generateSection({
-      section_title: sectionTitle,
-      keywords: toc?.keywords || [],
-      context: store.context,
-      proposal_family: store.proposalFamily,
-      prompt: store.prompt,
-      pattern_guidance: toc?.description || "",
-      instruction,
-      model: store.model,
-      top_k: store.quality.top_k,
-      include_temenos_official: store.quality.include_temenos_official,
-      use_hybrid_retrieval: store.quality.use_hybrid_retrieval,
-      detail_level: store.quality.detail_level,
-      require_evidence: store.quality.require_evidence,
-    });
-    res.id = tocId;
-    if (existing?.locked) res.locked = true;
-    return res;
-  }
+  const hasContent = store.sections.some((section) => section.content);
 
-  async function regenerate(sectionId: string, instruction: string) {
+  async function adaptOne(sectionId: string, instruction = "") {
     setError("");
     setBusySection(sectionId);
     try {
-      const res = await genOne(sectionId, instruction);
-      store.upsertSection(res);
+      const existing = store.sections.find((item) => item.id === sectionId);
+      const referenceNode = referenceSections.get(sectionId);
+      const toc = store.toc.find((item) => item.id === sectionId);
+      const res = await api.adaptSection({
+        section_title: existing?.title || referenceNode?.title || toc?.title || "Section",
+        reference_content: referenceNode ? templateBody(referenceNode) : existing?.content || "",
+        context: store.context,
+        proposal_family: store.proposalFamily,
+        prompt: store.prompt,
+        instruction,
+        model: store.model,
+        top_k: store.quality.top_k,
+        include_temenos_official: store.quality.include_temenos_official,
+        use_hybrid_retrieval: store.quality.use_hybrid_retrieval,
+        require_evidence: store.quality.require_evidence,
+        reference_headings: (referenceNode?.subsections || []).map((item) => item.title),
+      });
+      store.upsertSection({
+        ...res.section,
+        id: sectionId,
+        locked: existing?.locked || false,
+      });
     } catch (e: any) {
-      setError(e.message || "Regeneration failed.");
+      setError(e.message || "Section adaptation failed.");
     } finally {
       setBusySection(null);
     }
@@ -151,8 +240,8 @@ export default function WorkspacePage() {
       setIssues(res.issues);
       setReviewSummary(res.summary);
     } catch (e: any) {
-      setReviewSummary(e.message || "Review failed.");
       setIssues([]);
+      setReviewSummary(e.message || "Review failed.");
     } finally {
       setReviewLoading(false);
     }
@@ -178,18 +267,9 @@ export default function WorkspacePage() {
     }
   }
 
-  function contentFromTemplate(node: TemplateSectionNode): string {
-    const paragraphs = (node.paragraphs || []).map((p) => p.text).filter(Boolean);
-    const body = paragraphs.join("\n\n");
-    const subheads = (node.subsections || [])
-      .map((s) => `## ${s.title}\n\n${contentFromTemplate(s)}`)
-      .filter(Boolean);
-    return [body, ...subheads].filter(Boolean).join("\n\n");
-  }
-
   function resetWorkspace() {
     const confirmed = window.confirm(
-      "Reset the workspace? This will clear the prompt, parsed RFP, TOC, generated sections, and current proposal context."
+      "Reset the workspace? This clears the prompt, TOC, generated sections, and current proposal context."
     );
     if (!confirmed) return;
     store.resetWorkspace();
@@ -206,56 +286,8 @@ export default function WorkspacePage() {
     router.push("/");
   }
 
-  const hasContent = store.sections.some((s) => s.content);
-  const selectedTemplate =
-    templateOptions.find((artifact) => artifact.template_id === selectedTemplateId) ||
-    templateOptions[0] ||
-    null;
-
-  useEffect(() => {
-    setMasterPrompt(store.prompt);
-  }, [store.prompt]);
-
-  useEffect(() => {
-    if (!selectedTemplateId && templateOptions.length > 0) {
-      setSelectedTemplateId(templateOptions[0].template_id);
-    }
-  }, [selectedTemplateId, templateOptions]);
-
-  useEffect(() => {
-    if (!selectedTemplate) return;
-    if (selectedTemplate.proposal_family) {
-      store.setProposalFamily(selectedTemplate.proposal_family);
-    }
-    if (selectedTemplate.sections?.length) {
-      store.setToc(
-        selectedTemplate.sections.map((section, idx) => ({
-          id: `${section.title}-${idx}`,
-          title: section.title,
-          keywords: section.title
-            .toLowerCase()
-            .split(/[^a-z0-9]+/)
-            .filter((word) => word.length > 2),
-          description: section.paragraphs?.[0]?.text || section.title,
-        }))
-      );
-      store.setSections(
-        selectedTemplate.sections.map((section, idx) => ({
-          id: `${section.title}-${idx}`,
-          title: section.title,
-          content: contentFromTemplate(section),
-          evidence: [],
-          locked: true,
-          model: "",
-          generated_at: "",
-        }))
-      );
-    }
-  }, [selectedTemplateId]);
-
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
-      {/* Header */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => router.push("/")}>
@@ -273,9 +305,7 @@ export default function WorkspacePage() {
                   {store.proposalFamily}
                 </Badge>
               )}
-              <span className="text-xs text-muted-foreground">
-                {store.context.tone} tone
-              </span>
+              <span className="text-xs text-muted-foreground">{store.context.tone} tone</span>
             </div>
           </div>
         </div>
@@ -293,110 +323,71 @@ export default function WorkspacePage() {
       </div>
 
       <Card className="mb-5 border-primary/20 bg-gradient-to-r from-white via-white to-muted/30">
-        <CardContent className="flex flex-wrap items-end justify-between gap-4 pt-5">
-          <div className="min-w-[280px] flex-1">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-muted-foreground">
-              Workspace Template
+        <CardContent className="space-y-4 pt-5">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="min-w-[280px] flex-1">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-muted-foreground">
+                Reference-First Workspace
+              </div>
+              <h2 className="mt-1 text-lg font-semibold">Select the reference proposal and the source documents</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                The system now adapts the selected reference proposal section-by-section instead of rewriting from scratch.
+              </p>
             </div>
-            <h2 className="mt-1 text-lg font-semibold">Select the proposal template and source documents here</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              This is the primary control bar for the browser proposal canvas.
-            </p>
+            <div className="grid min-w-[320px] gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Reference Template
+                </label>
+                <Select value={selectedTemplate?.template_id || ""} onChange={(e) => setSelectedTemplateId(e.target.value)}>
+                  <option value="">Select a template</option>
+                  {templateOptions.map((item) => (
+                    <option key={item.template_id} value={item.template_id}>
+                      {item.proposal_family} - {item.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Source Documents
+                </label>
+                <DropdownMultiSelect
+                  label=""
+                  options={documentOptions}
+                  value={store.context.selected_documents}
+                  onChange={(next) => store.setContext({ selected_documents: next })}
+                  placeholder="Choose documents"
+                  helper="Only these documents are used to extract facts for adaptation."
+                />
+              </div>
+            </div>
           </div>
-          <div className="grid min-w-[320px] gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Template
-              </label>
-              <Select
-                value={selectedTemplate?.template_id || ""}
-                onChange={(e) => {
-                  setSelectedTemplateId(e.target.value);
-                }}
-              >
-                <option value="">Select a template</option>
-                {templateOptions.map((t) => (
-                  <option key={t.template_id} value={t.template_id}>
-                    {t.proposal_family} - {t.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Selected Documents
-              </label>
-              <DropdownMultiSelect
-                label=""
-                options={documentOptions}
-                value={store.context.selected_documents}
-                onChange={(next) => store.setContext({ selected_documents: next })}
-                placeholder="Choose documents"
-                helper="Only selected documents are used when generating sections."
-              />
-            </div>
+
+          <div className="border-t border-border pt-4">
+            <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Master Prompt
+            </label>
+            <textarea
+              value={masterPrompt}
+              onChange={(e) => {
+                setMasterPrompt(e.target.value);
+                store.setPrompt(e.target.value);
+              }}
+              rows={4}
+              className="w-full rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none focus:border-primary"
+              placeholder="Describe the target client, version changes, scope deltas, exclusions, and any section-level instructions that should apply globally."
+            />
           </div>
         </CardContent>
-        <div className="border-t border-border px-5 py-4">
-          <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Master Prompt
-          </label>
-          <textarea
-            value={masterPrompt}
-            onChange={(e) => {
-              setMasterPrompt(e.target.value);
-              store.setPrompt(e.target.value);
-            }}
-            rows={4}
-            className="w-full rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none ring-0 focus:border-primary"
-            placeholder="Describe how you want the full proposal to adapt, what should stay static, what should change, and any version replacements..."
-          />
-          <p className="mt-2 text-xs text-muted-foreground">
-            This prompt applies to the full proposal and is reused whenever you generate or regenerate a section.
-          </p>
-        </div>
       </Card>
 
-      {parsedArtifacts.length > 0 && (
-        <Card className="mb-5 border-dashed border-accent/30 bg-accent/5">
-          <CardContent className="space-y-3 pt-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-muted-foreground">
-                  Parsed Template
-                </div>
-                <h3 className="mt-1 text-sm font-semibold">Available parsed DOCX templates</h3>
-              </div>
-              <Badge tone="accent">{parsedArtifacts.length}</Badge>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {parsedArtifacts.map((artifact) => (
-                <div key={artifact.template_id} className="rounded-xl border border-border bg-white p-4 shadow-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-medium">{artifact.name || "Untitled template"}</div>
-                    <Badge tone="muted">{artifact.proposal_family || "General"}</Badge>
-                  </div>
-                  <div className="mt-2 text-xs text-muted-foreground break-all">
-                    {artifact.source_file}
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    <Badge tone="muted">{artifact.sections?.length || 0} sections</Badge>
-                    <Badge tone="muted">{artifact.images?.length || 0} images</Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
-        {/* Left rail */}
         <div className="space-y-4">
           <Card>
             <CardContent className="space-y-3 pt-5">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold">Generation Plan (TOC)</h2>
+                <h2 className="text-sm font-semibold">Major TOC</h2>
                 <Badge tone="muted">{store.toc.length}</Badge>
               </div>
               <TocEditor />
@@ -438,7 +429,7 @@ export default function WorkspacePage() {
                   value={store.context.canonical_product}
                   onChange={(next) => store.setContext({ canonical_product: next })}
                   placeholder="Add canonical product"
-                  helper="Select one or more products to guide tone and terminology."
+                  helper="This is used as a terminology guardrail during adaptation."
                 />
               </div>
             </CardContent>
@@ -449,7 +440,7 @@ export default function WorkspacePage() {
               <div className="flex items-center justify-between">
                 <h2 className="flex items-center gap-2 text-sm font-semibold">
                   <SlidersHorizontal className="h-4 w-4" />
-                  Proposal Quality
+                  Adaptation Controls
                 </h2>
                 <Badge tone="muted">{store.quality.detail_level}</Badge>
               </div>
@@ -463,7 +454,6 @@ export default function WorkspacePage() {
                       include_temenos_official: !store.quality.include_temenos_official,
                     })
                   }
-                  title="Allow official Temenos website snippets in retrieval"
                 >
                   <Globe2 className="h-4 w-4" />
                   Temenos Web
@@ -477,7 +467,6 @@ export default function WorkspacePage() {
                       use_hybrid_retrieval: !store.quality.use_hybrid_retrieval,
                     })
                   }
-                  title="Combine vector retrieval with BM25 keyword matching"
                 >
                   Hybrid RAG
                 </Button>
@@ -490,7 +479,6 @@ export default function WorkspacePage() {
                       require_evidence: !store.quality.require_evidence,
                     })
                   }
-                  title="Pause generation when no evidence is retrieved"
                 >
                   Evidence Only
                 </Button>
@@ -514,69 +502,25 @@ export default function WorkspacePage() {
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Detail Profile
-                </label>
-                <Select
-                  value={store.quality.detail_level}
-                  onChange={(e) =>
-                    store.setQuality({
-                      detail_level: e.target.value as "balanced" | "corpus" | "exhaustive",
-                    })
-                  }
-                >
-                  <option value="balanced">Balanced</option>
-                  <option value="corpus">Match Corpus</option>
-                  <option value="exhaustive">Exhaustive</option>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="space-y-3 pt-5">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Model
                 </label>
-                <Select
-                  value={store.model}
-                  onChange={(e) => store.setModel(e.target.value)}
-                >
-                  {models.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
+                <Select value={store.model} onChange={(e) => store.setModel(e.target.value)}>
+                  {models.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
                     </option>
                   ))}
                 </Select>
               </div>
-
-              <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                The selected template is loaded into the canvas automatically. Use the section controls to regenerate any block with a prompt.
-              </div>
-
               <div className="grid grid-cols-2 gap-2 pt-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={runReview}
-                  disabled={!hasContent}
-                >
+                <Button variant="outline" size="sm" onClick={runReview} disabled={!hasContent}>
                   <ShieldCheck className="h-4 w-4" /> Review
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setVersionsOpen(true)}
-                >
+                <Button variant="outline" size="sm" onClick={() => setVersionsOpen(true)}>
                   <History className="h-4 w-4" /> Versions
                 </Button>
               </div>
-              <Button
-                className="w-full"
-                variant="default"
-                onClick={exportDocx}
-                disabled={!hasContent || exporting}
-              >
+              <Button className="w-full" variant="default" onClick={exportDocx} disabled={!hasContent || exporting}>
                 {exporting ? <Spinner /> : <Download className="h-4 w-4" />}
                 Export Proposal (DOCX)
               </Button>
@@ -586,42 +530,30 @@ export default function WorkspacePage() {
                   target="_blank"
                   className="block text-center text-xs text-accent underline-offset-2 hover:underline"
                 >
-                  Download link (if it didn&apos;t open)
+                  Download link (if it did not open)
                 </a>
               )}
             </CardContent>
           </Card>
-
-          {store.familyRationale && (
-            <Card>
-              <CardContent className="pt-5">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Why this family?
-                </h3>
-                <p className="mt-1 text-xs text-foreground/80">
-                  {store.familyRationale}
-                </p>
-              </CardContent>
-            </Card>
-          )}
         </div>
 
-        {/* Sections */}
         <div className="space-y-4">
           <Card className="border-border/70 bg-white/85 shadow-sm">
             <CardContent className="space-y-3 pt-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-sm font-semibold">Browser Proposal Canvas</h2>
+                  <h2 className="text-sm font-semibold">Document Canvas</h2>
                   <p className="text-xs text-muted-foreground">
-                    Edit the proposal directly here. Static blocks stay fixed and sections can be regenerated individually.
+                    Each section starts from the parsed reference document. Generate only the sections you want to adapt.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge tone="muted">{store.sections.length} sections</Badge>
                   <Badge tone="muted">{store.context.selected_documents.length} docs</Badge>
+                  <Badge tone="muted">{selectedTemplate?.images?.length || 0} images</Badge>
                 </div>
               </div>
+
               <div className="rounded-2xl border border-border bg-[#fbfbf7] p-4 shadow-inner">
                 <div className="mx-auto max-w-[980px] rounded-[28px] bg-white px-6 py-8 shadow-[0_12px_40px_rgba(15,23,42,0.10)]">
                   <div className="border-b border-border pb-5">
@@ -632,31 +564,45 @@ export default function WorkspacePage() {
                     <div className="mt-2 text-sm text-muted-foreground">
                       Template: {selectedTemplate ? `${selectedTemplate.proposal_family} - ${selectedTemplate.name}` : "None selected"}
                     </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Date: {new Date().toLocaleDateString()}
-                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">Date: {new Date().toLocaleDateString()}</div>
                   </div>
+
                   <div className="mt-5 space-y-4">
                     {store.sections.length === 0 ? (
                       <div className="rounded-xl border border-dashed border-border bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
-                        Choose a template and documents, then generate sections here.
+                        Choose a parsed reference template to load the proposal canvas.
                       </div>
                     ) : (
-                      store.sections.map((section, i) => (
-                        <SectionCard
-                          key={section.id}
-                          section={section}
-                          index={i}
-                          total={store.sections.length}
-                          busy={busySection === section.id}
-                          onRegenerate={(instruction) => regenerate(section.id, instruction)}
-                          onToggleLock={() => store.updateSection(section.id, { locked: !section.locked })}
-                          onDelete={() => store.removeSection(section.id)}
-                          onMove={(dir) => store.moveSection(section.id, dir)}
-                          onEdit={(patch) => store.updateSection(section.id, patch)}
-                          onShowEvidence={() => setEvidenceFor(section)}
-                        />
-                      ))
+                      store.sections.map((section, index) => {
+                        const referenceNode = referenceSections.get(section.id);
+                        const images = referenceNode ? collectSectionImages(referenceNode) : [];
+                        return (
+                          <div key={section.id} className="space-y-3">
+                            {images.map((image) => (
+                              <div key={`${section.id}-${image.index}`} className="overflow-hidden rounded-2xl border border-border bg-muted/10 p-3">
+                                <img
+                                  src={assetUrl(image.asset_url)}
+                                  alt={image.caption || image.filename || section.title}
+                                  className="max-h-[360px] w-full rounded-xl object-contain"
+                                />
+                                <div className="mt-2 text-xs text-muted-foreground">{image.caption || image.filename}</div>
+                              </div>
+                            ))}
+                            <SectionCard
+                              section={section}
+                              index={index}
+                              total={store.sections.length}
+                              busy={busySection === section.id}
+                              onRegenerate={(instruction) => adaptOne(section.id, instruction)}
+                              onToggleLock={() => store.updateSection(section.id, { locked: !section.locked })}
+                              onDelete={() => store.removeSection(section.id)}
+                              onMove={(dir) => store.moveSection(section.id, dir)}
+                              onEdit={(patch) => store.updateSection(section.id, patch)}
+                              onShowEvidence={() => setEvidenceFor(section)}
+                            />
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -664,31 +610,11 @@ export default function WorkspacePage() {
             </CardContent>
           </Card>
 
-          {error && (
-            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {error}
-            </p>
-          )}
-
-          {store.sections.length === 0 && (
-            <Card>
-              <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-                <Sparkles className="h-8 w-8 text-accent" />
-                <h2 className="text-lg font-semibold">Select a parsed template</h2>
-                <p className="max-w-sm text-sm text-muted-foreground">
-                  The chosen parsed template will load here as the editable proposal document. Use section-level Generate controls to change any block.
-                </p>
-              </CardContent>
-            </Card>
-          )}
+          {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
         </div>
       </div>
 
-      <EvidenceDrawer
-        section={evidenceFor}
-        open={!!evidenceFor}
-        onClose={() => setEvidenceFor(null)}
-      />
+      <EvidenceDrawer section={evidenceFor} open={!!evidenceFor} onClose={() => setEvidenceFor(null)} />
       <ReviewPanel
         open={reviewOpen}
         onClose={() => setReviewOpen(false)}
@@ -708,15 +634,4 @@ export default function WorkspacePage() {
       />
     </main>
   );
-}
-
-function flattenTemplateSections(nodes: TemplateSectionNode[]): TemplateSectionNode[] {
-  const out: TemplateSectionNode[] = [];
-  for (const node of nodes || []) {
-    out.push(node);
-    if (node.subsections?.length) {
-      out.push(...flattenTemplateSections(node.subsections));
-    }
-  }
-  return out;
 }

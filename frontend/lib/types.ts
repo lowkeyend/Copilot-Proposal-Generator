@@ -80,6 +80,8 @@ export interface TemplateTable {
 export interface TemplateImage {
   index: number;
   filename: string;
+  asset_path: string;
+  asset_url: string;
   width: number;
   height: number;
   caption: string;
@@ -98,12 +100,29 @@ export interface TemplateSectionNode {
   subsections: TemplateSectionNode[];
 }
 
+export interface TemplateBlock {
+  block_id: string;
+  kind: "heading" | "paragraph" | "table" | "image" | "list";
+  section_title: string;
+  heading_level: number;
+  text: string;
+  style: string;
+  order: number;
+  items: string[];
+  table_rows: string[][];
+  image?: TemplateImage | null;
+  static: boolean;
+  editable: boolean;
+  adaptation_hint: string;
+}
+
 export interface TemplateDocumentArtifact {
   template_id: string;
   name: string;
   source_file: string;
   proposal_family: string;
   sections: TemplateSectionNode[];
+  blocks: TemplateBlock[];
   images: TemplateImage[];
   metadata: Record<string, unknown>;
   created_at: string;
@@ -145,6 +164,26 @@ export interface SectionResult {
   locked: boolean;
   model: string;
   generated_at: string;
+}
+
+export interface ProposalBrief {
+  summary: string;
+  must_change: string[];
+  must_preserve: string[];
+  forbidden_claims: string[];
+  prompt_directives: string[];
+}
+
+export interface AdaptationChange {
+  kind: "replace" | "remove" | "add" | "preserve";
+  detail: string;
+}
+
+export interface AdaptSectionResponse {
+  section: SectionResult;
+  brief: ProposalBrief;
+  change_plan: AdaptationChange[];
+  validation_notes: string[];
 }
 
 export interface ReviewIssue {

@@ -149,6 +149,8 @@ class TemplateTable(BaseModel):
 class TemplateImage(BaseModel):
     index: int = 0
     filename: str = ""
+    asset_path: str = ""
+    asset_url: str = ""
     width: float = 0.0
     height: float = 0.0
     caption: str = ""
@@ -167,12 +169,29 @@ class TemplateSectionNode(BaseModel):
     subsections: list["TemplateSectionNode"] = Field(default_factory=list)
 
 
+class TemplateBlock(BaseModel):
+    block_id: str = Field(default_factory=_uid)
+    kind: Literal["heading", "paragraph", "table", "image", "list"]
+    section_title: str = ""
+    heading_level: int = 0
+    text: str = ""
+    style: str = ""
+    order: int = 0
+    items: list[str] = Field(default_factory=list)
+    table_rows: list[list[str]] = Field(default_factory=list)
+    image: Optional[TemplateImage] = None
+    static: bool = False
+    editable: bool = True
+    adaptation_hint: str = ""
+
+
 class TemplateDocumentArtifact(BaseModel):
     template_id: str = Field(default_factory=_uid)
     name: str = ""
     source_file: str = ""
     proposal_family: str = ""
     sections: list[TemplateSectionNode] = Field(default_factory=list)
+    blocks: list[TemplateBlock] = Field(default_factory=list)
     images: list[TemplateImage] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=_now)
@@ -393,6 +412,41 @@ class GenerateSectionRequest(BaseModel):
     use_hybrid_retrieval: bool = True
     detail_level: Literal["balanced", "corpus", "exhaustive"] = "corpus"
     require_evidence: bool = True
+
+
+class ProposalBrief(BaseModel):
+    summary: str = ""
+    must_change: list[str] = Field(default_factory=list)
+    must_preserve: list[str] = Field(default_factory=list)
+    forbidden_claims: list[str] = Field(default_factory=list)
+    prompt_directives: list[str] = Field(default_factory=list)
+
+
+class AdaptSectionRequest(BaseModel):
+    section_title: str
+    reference_content: str
+    context: ClientContext
+    proposal_family: str
+    prompt: str = ""
+    instruction: str = ""
+    model: Optional[str] = None
+    top_k: int = 8
+    include_temenos_official: bool = False
+    use_hybrid_retrieval: bool = True
+    require_evidence: bool = True
+    reference_headings: list[str] = Field(default_factory=list)
+
+
+class AdaptationChange(BaseModel):
+    kind: Literal["replace", "remove", "add", "preserve"] = "preserve"
+    detail: str
+
+
+class AdaptSectionResponse(BaseModel):
+    section: "SectionResult"
+    brief: ProposalBrief = Field(default_factory=ProposalBrief)
+    change_plan: list[AdaptationChange] = Field(default_factory=list)
+    validation_notes: list[str] = Field(default_factory=list)
 
 
 class SectionResult(BaseModel):

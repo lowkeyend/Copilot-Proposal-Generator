@@ -39,7 +39,7 @@ def _split_sentences(text: str) -> list[str]:
     return [part.strip() for part in parts if part.strip()]
 
 
-def _chunk_text(text: str, chunk_size: int = 500, overlap: int = 90) -> list[str]:
+def _chunk_text(text: str, chunk_size: int = 420, overlap: int = 70) -> list[str]:
     sentences = _split_sentences(text)
     if not sentences:
         return [text] if text else []
@@ -124,6 +124,13 @@ def _extract_docx_sections(data: bytes) -> list[tuple[str, str]]:
             current_heading = text
             continue
         current_blocks.append(text)
+
+    for table in doc.tables:
+        current_blocks.extend(
+            " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+            for row in table.rows
+            if any(cell.text.strip() for cell in row.cells)
+        )
 
     flush()
     return sections or [("Document Overview", _extract_docx(data))]
