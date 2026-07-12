@@ -88,6 +88,57 @@ function sectionBlocks(template: TemplateDocumentArtifact | null, node: Template
     .sort((a, b) => a.order - b.order);
 }
 
+function applyWorkspaceContextToBlocks(
+  blocks: TemplateBlock[],
+  clientName: string,
+  currentVersion: string,
+  targetVersion: string
+) {
+  return blocks.map((block) => {
+    const next: TemplateBlock = {
+      ...block,
+      section_title: applyWorkspaceContextToReference(
+        block.section_title || "",
+        clientName,
+        currentVersion,
+        targetVersion
+      ),
+      text: applyWorkspaceContextToReference(
+        block.text || "",
+        clientName,
+        currentVersion,
+        targetVersion
+      ),
+      items: (block.items || []).map((item) =>
+        applyWorkspaceContextToReference(item, clientName, currentVersion, targetVersion)
+      ),
+      table_rows: (block.table_rows || []).map((row) =>
+        row.map((cell) =>
+          applyWorkspaceContextToReference(cell, clientName, currentVersion, targetVersion)
+        )
+      ),
+    };
+    if (block.image) {
+      next.image = {
+        ...block.image,
+        caption: applyWorkspaceContextToReference(
+          block.image.caption || "",
+          clientName,
+          currentVersion,
+          targetVersion
+        ),
+        section: applyWorkspaceContextToReference(
+          block.image.section || "",
+          clientName,
+          currentVersion,
+          targetVersion
+        ),
+      };
+    }
+    return next;
+  });
+}
+
 function templateBody(node: TemplateSectionNode): string {
   const paragraphs = (node.paragraphs || []).map((p) => p.text).filter(Boolean);
   const tables = collectSectionTables(node);
@@ -262,7 +313,12 @@ export default function WorkspacePage() {
           store.context.intake.current_version,
           store.context.intake.target_version
         ),
-        blocks: sectionBlocks(selectedTemplate, section),
+        blocks: applyWorkspaceContextToBlocks(
+          sectionBlocks(selectedTemplate, section),
+          store.context.client_name,
+          store.context.intake.current_version,
+          store.context.intake.target_version
+        ),
         evidence: [],
         images: collectSectionImages(section),
         locked: isStaticSection(section.title),
@@ -289,7 +345,12 @@ export default function WorkspacePage() {
             store.context.intake.current_version,
             store.context.intake.target_version
           ),
-          blocks: sectionBlocks(selectedTemplate, referenceNode),
+          blocks: applyWorkspaceContextToBlocks(
+            sectionBlocks(selectedTemplate, referenceNode),
+            store.context.client_name,
+            store.context.intake.current_version,
+            store.context.intake.target_version
+          ),
         };
       })
     );
