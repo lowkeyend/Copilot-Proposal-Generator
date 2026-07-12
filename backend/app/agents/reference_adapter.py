@@ -145,6 +145,26 @@ def _context_facts(req: AdaptSectionRequest) -> list[str]:
 
 async def _build_brief(req: AdaptSectionRequest, evidence_lines: list[str]) -> ProposalBrief:
     llm = get_llm()
+    client_name = _clean(req.context.client_name)
+    current_version = _clean(req.context.intake.current_version)
+    target_version = _clean(req.context.intake.target_version)
+    deterministic = ProposalBrief(
+        summary=f"Adapt {req.section_title} for {client_name or 'the target client'} using the selected context and prompt.",
+        must_change=[
+            *( [f"Replace any reference client name with {client_name}."] if client_name else [] ),
+            *( [f"Reflect the upgrade path from {current_version} to {target_version}."] if current_version and target_version else [] ),
+            *( [f"Apply master prompt instructions: {req.prompt.strip()}"] if (req.prompt or '').strip() else [] ),
+            *( [f"Apply section instruction: {req.instruction.strip()}"] if (req.instruction or '').strip() else [] ),
+        ],
+        must_preserve=[
+            "Preserve the reference section structure and operational tone.",
+            "Keep only evidence-supported statements.",
+        ],
+        forbidden_claims=list(_MARKETING_PHRASES),
+        prompt_directives=[
+            item for item in [req.prompt.strip(), req.instruction.strip()] if item
+        ],
+    )
     prompt = f"""
 Return JSON with keys:
 - summary: short string
@@ -173,16 +193,26 @@ Rules:
 - Do not suggest unsupported benefits or marketing claims.
 - If the reference contains static legal or company profile content, preserve it.
 """
-    data = await llm.chat_json(
-        [
-            {"role": "system", "content": "You produce strict JSON only."},
-            {"role": "user", "content": prompt},
-        ],
-        model=req.model,
-        temperature=0.1,
-        max_tokens=800,
-    )
-    return ProposalBrief.model_validate(data)
+    try:
+        data = await llm.chat_json(
+            [
+                {"role": "system", "content": "You produce strict JSON only."},
+                {"role": "user", "content": prompt},
+            ],
+            model=req.model,
+            temperature=0.1,
+            max_tokens=800,
+        )
+        parsed = ProposalBrief.model_validate(data)
+        parsed.must_change = list(dict.fromkeys([*deterministic.must_change, *parsed.must_change]))
+        parsed.must_preserve = list(dict.fromkeys([*deterministic.must_preserve, *parsed.must_preserve]))
+        parsed.forbidden_claims = list(dict.fromkeys([*deterministic.forbidden_claims, *parsed.forbidden_claims]))
+        parsed.prompt_directives = list(dict.fromkeys([*deterministic.prompt_directives, *parsed.prompt_directives]))
+        if not parsed.summary:
+            parsed.summary = deterministic.summary
+        return parsed
+    except Exception:
+        return deterministic
 
 
 def _validate_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief) -> list[str]:
