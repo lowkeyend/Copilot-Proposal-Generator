@@ -237,7 +237,7 @@ def _validate_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief) 
     for phrase in list(_MARKETING_PHRASES) + list(brief.forbidden_claims):
         needle = (phrase or "").strip().lower()
         if needle and needle in lowered and needle not in reference_lower:
-            raise LLMError(f"unsupported claim introduced: {phrase}")
+            notes.append(f"unsupported claim removed or retained risk: {phrase}")
     client_name = _clean(req.context.client_name)
     if client_name and client_name.lower() not in lowered:
         notes.append("client name not present in adapted output")
@@ -245,6 +245,25 @@ def _validate_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief) 
     if any(name.lower() in lowered for name in leaked_names):
         raise LLMError("adapted output still contains a reference client name")
     return notes
+
+
+def _sanitize_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief, evidence_lines: list[str]) -> str:
+    cleaned = _apply_client_name_guardrail(text, req, evidence_lines)
+    reference_corpus = f"{req.reference_content}\n" + "\n".join(brief.must_change) + "\n".join(brief.must_preserve)
+    reference_lower = reference_corpus.lower()
+    sentences = re.split(r"(?<=[.!?])\s+", cleaned)
+    kept: list[str] = []
+    for sentence in sentences:
+        low = sentence.lower()
+        blocked = False
+        for phrase in list(_MARKETING_PHRASES) + list(brief.forbidden_claims):
+            needle = (phrase or "").strip().lower()
+            if needle and needle in low and needle not in reference_lower:
+                blocked = True
+                break
+        if not blocked:
+            kept.append(sentence)
+    return _clean(" ".join(kept) or cleaned)
 
 
 def _needs_retry(content: str, req: AdaptSectionRequest) -> bool:
@@ -402,7 +421,7 @@ Rules:
     )
     if _needs_retry(content, effective_req):
         content = await _retry_adaptation(effective_req, brief, evidence_lines, content)
-    content = _apply_client_name_guardrail(content, effective_req, evidence_lines)
+    content = _sanitize_output(content, effective_req, brief, evidence_lines)
     notes = _validate_output(content, effective_req, brief)
     section = SectionResult(
         title=req.section_title,
