@@ -6,8 +6,8 @@ from app.agents.section_writer import (
     _prune_unsupported_sentences,
     _validation_issues,
 )
-from app.agents.reference_adapter import _deterministic_patch
-from app.models.schemas import ClientContext, EvidenceChunk, GenerateSectionRequest, IntakeProfile
+from app.agents.reference_adapter import _deterministic_patch, _effective_versions, _patch_reference_blocks
+from app.models.schemas import AdaptSectionRequest, ClientContext, EvidenceChunk, GenerateSectionRequest, IntakeProfile, TemplateBlock
 
 
 def _request() -> GenerateSectionRequest:
@@ -210,8 +210,67 @@ def test_deterministic_patch_preserves_scope_structure() -> None:
 
     patched = _deterministic_patch(req, [])
 
-    assert "## Core Upgrade: Temenos Transact R20 to R24" in patched
+    assert "## Core Upgrade: Temenos Transact R20 TAFJ to R24 TAFJ" in patched
     assert "QIB" in patched
     assert "### Environment Readiness Assessment" in patched
     assert "### Upgrade Analysis" in patched
     assert "Alkuraimi" not in patched
+    assert "R24 target release" not in patched
+
+
+def test_prompt_version_override_takes_priority_over_context() -> None:
+    req = AdaptSectionRequest(
+        section_title="Scope of Work",
+        reference_content="## Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ",
+        reference_blocks=[],
+        context=ClientContext(
+            client_name="QIB",
+            industry="Banking",
+            project_type="Technical Upgrade",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(current_version="R19", target_version="R24"),
+        ),
+        proposal_family="Temenos",
+        prompt="Prepare a technical upgrade proposal for QIB and change the upgrade from R17 to R24.",
+    )
+
+    current_version, target_version = _effective_versions(req)
+    patched = _deterministic_patch(req, [])
+
+    assert current_version == "R17"
+    assert target_version == "R24"
+    assert "R17" in patched
+    assert "R19" not in patched
+
+
+def test_patch_reference_blocks_preserves_list_structure() -> None:
+    req = AdaptSectionRequest(
+        section_title="Scope of Work",
+        reference_content="",
+        reference_blocks=[
+            TemplateBlock(kind="heading", section_title="Scope of Work", heading_level=2, text="Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ", order=0),
+            TemplateBlock(kind="paragraph", section_title="Scope of Work", text="SYS will execute a like-for-like technical upgrade of Alkuraimi Bank's Temenos Transact Core Banking platform from the current release to the latest agreed Temenos release.", order=1),
+            TemplateBlock(kind="heading", section_title="Scope of Work", heading_level=3, text="Environment Readiness Assessment", order=2),
+            TemplateBlock(kind="list", section_title="Scope of Work", text="Hardware, operating system, middleware, compiler, and database compatibility assessment", items=["Hardware, operating system, middleware, compiler, and database compatibility assessment"], order=3),
+            TemplateBlock(kind="list", section_title="Scope of Work", text="Review of infrastructure readiness for target release", items=["Review of infrastructure readiness for target release"], order=4),
+        ],
+        context=ClientContext(
+            client_name="QIB",
+            industry="Banking",
+            project_type="Technical Upgrade",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(current_version="R20", target_version="R24"),
+        ),
+        proposal_family="Temenos",
+        prompt="Prepare a technical upgrade proposal for QIB. Replace all reference client names with QIB, change the upgrade from R20 to R24.",
+    )
+
+    blocks = _patch_reference_blocks(req, [])
+
+    assert blocks[0].text == "Core Upgrade: Temenos Transact R20 TAFJ to R24 TAFJ"
+    assert "QIB" in blocks[1].text
+    assert blocks[3].kind == "list"
+    assert blocks[3].items == ["Hardware, operating system, middleware, compiler, and database compatibility assessment"]
+    assert blocks[4].items == ["Review of infrastructure readiness for target release"]

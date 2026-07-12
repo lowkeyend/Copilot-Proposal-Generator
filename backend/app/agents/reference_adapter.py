@@ -56,6 +56,50 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip())
 
 
+def _effective_versions(req: AdaptSectionRequest) -> tuple[str, str]:
+    combined = f"{req.prompt or ''}\n{req.instruction or ''}"
+    match = re.search(
+        r"\b(?:change|upgrade|update|move)\s+(?:the\s+upgrade\s+)?from\s+(R\d+[A-Za-z0-9._-]*)\s+to\s+(R\d+[A-Za-z0-9._-]*)\b",
+        combined,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return _clean(match.group(1)), _clean(match.group(2))
+    return _clean(req.context.intake.current_version), _clean(req.context.intake.target_version)
+
+
+def _apply_version_guardrail(text: str, req: AdaptSectionRequest) -> str:
+    current_version, target_version = _effective_versions(req)
+    if not current_version or not target_version or current_version == target_version:
+        return text
+    updated = text
+    updated = re.sub(
+        r"\bfrom\s+release\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b",
+        f"from release {current_version} to {target_version}",
+        updated,
+        flags=re.IGNORECASE,
+    )
+    updated = re.sub(
+        r"\bfrom\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b",
+        f"from {current_version} to {target_version}",
+        updated,
+        flags=re.IGNORECASE,
+    )
+    updated = re.sub(
+        r"\bTemenos\s+Transact\s+R\d+[A-Za-z0-9._-]*(?:\s+TAFJ)?\s+to\s+R\d+[A-Za-z0-9._-]*(?:\s+TAFJ)?\b",
+        lambda m: re.sub(
+            r"R\d+[A-Za-z0-9._-]*",
+            current_version,
+            re.sub(r"to\s+R\d+[A-Za-z0-9._-]*", f"to {target_version}", m.group(0), count=1, flags=re.IGNORECASE),
+            count=1,
+            flags=re.IGNORECASE,
+        ),
+        updated,
+        flags=re.IGNORECASE,
+    )
+    return updated
+
+
 def _normalized_words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", (text or "").lower())
 
@@ -76,6 +120,7 @@ def _reference_client_candidates(text: str) -> list[str]:
 def _all_disallowed_client_names(req: AdaptSectionRequest, evidence_lines: list[str] | None = None) -> list[str]:
     client_name = _clean(req.context.client_name)
     sources = [req.reference_content]
+    sources.extend(block.text for block in (getattr(req, "reference_blocks", None) or []) if block.text)
     if evidence_lines:
         sources.extend(evidence_lines)
     names: list[str] = []
@@ -105,22 +150,7 @@ def _apply_client_name_guardrail(
 
 def _prepare_reference_content(req: AdaptSectionRequest) -> str:
     base = _apply_client_name_guardrail(req.reference_content, req)
-    current_version = _clean(req.context.intake.current_version)
-    target_version = _clean(req.context.intake.target_version)
-    if current_version and target_version and current_version != target_version:
-        base = re.sub(
-            r"\bfrom\s+release\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b",
-            f"from release {current_version} to {target_version}",
-            base,
-            flags=re.IGNORECASE,
-        )
-        base = re.sub(
-            r"\bfrom\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b",
-            f"from {current_version} to {target_version}",
-            base,
-            flags=re.IGNORECASE,
-        )
-    return base
+    return _apply_version_guardrail(base, req)
 
 
 def _line_similarity(a: str, b: str) -> float:
@@ -128,31 +158,7 @@ def _line_similarity(a: str, b: str) -> float:
 
 
 def _patch_heading_versions(line: str, req: AdaptSectionRequest) -> str:
-    current_version = _clean(req.context.intake.current_version)
-    target_version = _clean(req.context.intake.target_version)
-    if not current_version or not target_version:
-        return line
-    updated = re.sub(
-        r"\bTemenos\s+Transact\s+[A-Za-z0-9._-]+(?:\s+TAFJ)?\s+to\s+[A-Za-z0-9._-]+(?:\s+TAFJ)?\b",
-        f"Temenos Transact {current_version} to {target_version}",
-        line,
-        flags=re.IGNORECASE,
-    )
-    updated = re.sub(
-        r"\bR\d+\b(?=.*\bto\b.*\bR\d+\b)",
-        current_version,
-        updated,
-        count=1,
-        flags=re.IGNORECASE,
-    )
-    updated = re.sub(
-        r"\bto\s+R\d+\b",
-        f"to {target_version}",
-        updated,
-        count=1,
-        flags=re.IGNORECASE,
-    )
-    return updated
+    return _apply_version_guardrail(line, req)
 
 
 def _apply_evidence_line_overrides(content: str, req: AdaptSectionRequest, evidence_lines: list[str]) -> str:
@@ -211,21 +217,6 @@ def _deterministic_patch(req: AdaptSectionRequest, evidence_lines: list[str]) ->
     patched: list[str] = []
     for line in lines:
         updated = _patch_heading_versions(line, req) if line.strip().startswith("#") else line
-        current_version = _clean(req.context.intake.current_version)
-        target_version = _clean(req.context.intake.target_version)
-        if current_version and target_version and current_version != target_version:
-            updated = re.sub(
-                r"\blatest agreed Temenos release\b",
-                f"{target_version} target release",
-                updated,
-                flags=re.IGNORECASE,
-            )
-            updated = re.sub(
-                r"\btarget Temenos release\b",
-                f"{target_version} target release",
-                updated,
-                flags=re.IGNORECASE,
-            )
         patched.append(updated)
     return _apply_evidence_line_overrides("\n".join(patched), req, evidence_lines)
 
@@ -233,29 +224,30 @@ def _deterministic_patch(req: AdaptSectionRequest, evidence_lines: list[str]) ->
 def _patch_reference_blocks(req: AdaptSectionRequest, evidence_lines: list[str]) -> list[TemplateBlock]:
     if not req.reference_blocks:
         return []
-    patched_content = _deterministic_patch(req, evidence_lines)
-    patched_lines = [line.rstrip() for line in patched_content.splitlines()]
-    heading_texts = [line.lstrip("#").strip() for line in patched_lines if line.strip().startswith("#")]
-    paragraph_lines = [line.strip() for line in patched_lines if line.strip() and not line.strip().startswith("#")]
-    heading_idx = 0
-    paragraph_idx = 0
     patched_blocks: list[TemplateBlock] = []
     for block in req.reference_blocks:
         next_block = block.model_copy(deep=True)
         if next_block.kind == "heading":
-            if heading_idx < len(heading_texts):
-                next_block.text = heading_texts[heading_idx]
-                next_block.section_title = heading_texts[heading_idx]
-            heading_idx += 1
-        elif next_block.kind in {"paragraph", "list"}:
-            if paragraph_idx < len(paragraph_lines):
-                next_block.text = paragraph_lines[paragraph_idx]
-                if next_block.kind == "list":
-                    next_block.items = [paragraph_lines[paragraph_idx]]
-            paragraph_idx += 1
+            next_block.text = _apply_version_guardrail(
+                _apply_client_name_guardrail(next_block.text or "", req, evidence_lines),
+                req,
+            )
+            if block.heading_level <= 1:
+                next_block.section_title = next_block.text
+        elif next_block.kind == "paragraph":
+            next_block.text = _apply_version_guardrail(
+                _apply_client_name_guardrail(next_block.text or "", req, evidence_lines),
+                req,
+            )
+        elif next_block.kind == "list":
+            next_block.items = [
+                _apply_version_guardrail(_apply_client_name_guardrail(item, req, evidence_lines), req)
+                for item in (next_block.items or [next_block.text] if next_block.text else [])
+            ]
+            next_block.text = "\n".join(next_block.items)
         elif next_block.kind == "table" and next_block.table_rows:
             next_block.table_rows = [
-                [_apply_client_name_guardrail(cell, req, evidence_lines) for cell in row]
+                [_apply_version_guardrail(_apply_client_name_guardrail(cell, req, evidence_lines), req) for cell in row]
                 for row in next_block.table_rows
             ]
         elif next_block.kind == "image" and next_block.image is not None:
@@ -265,9 +257,28 @@ def _patch_reference_blocks(req: AdaptSectionRequest, evidence_lines: list[str])
                     "section": _apply_client_name_guardrail(next_block.image.section or "", req, evidence_lines),
                 }
             )
-        next_block.text = _apply_client_name_guardrail(next_block.text or "", req, evidence_lines)
         patched_blocks.append(next_block)
     return patched_blocks
+
+
+def _content_from_blocks(blocks: list[TemplateBlock]) -> str:
+    lines: list[str] = []
+    for block in blocks:
+        if block.kind == "heading":
+            prefix = "#" * max(block.heading_level or 1, 1)
+            lines.extend([f"{prefix} {block.text}".rstrip(), ""])
+        elif block.kind == "paragraph":
+            lines.extend([block.text.strip(), ""])
+        elif block.kind == "list":
+            items = block.items or [line.strip() for line in (block.text or "").splitlines() if line.strip()]
+            lines.extend([f"- {item}".rstrip() for item in items])
+            lines.append("")
+        elif block.kind == "table":
+            for row in block.table_rows or []:
+                lines.append(f"| {' | '.join((cell or '').strip() for cell in row)} |")
+            if block.table_rows:
+                lines.append("")
+    return "\n".join(lines).strip()
 
 
 def _blocks_from_content(req: AdaptSectionRequest, content: str) -> list[TemplateBlock]:
@@ -581,8 +592,8 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
     plan.extend(AdaptationChange(kind="replace", detail=item) for item in brief.must_change[:8])
 
     if _should_use_patch_only(effective_req):
-        content = _deterministic_patch(effective_req, evidence_lines)
         blocks = _patch_reference_blocks(effective_req, evidence_lines)
+        content = _content_from_blocks(blocks) if blocks else _deterministic_patch(effective_req, evidence_lines)
         notes = _validate_output(content, effective_req, brief)
         section = SectionResult(
             title=req.section_title,
