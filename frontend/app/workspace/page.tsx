@@ -80,6 +80,11 @@ function assetUrl(path: string) {
   return `http://localhost:8000${path}`;
 }
 
+function templateSignature(template: TemplateDocumentArtifact | null) {
+  if (!template) return "";
+  return `${template.template_id}:${template.updated_at || ""}:${template.sections?.length || 0}`;
+}
+
 export default function WorkspacePage() {
   const router = useRouter();
   const store = useProposalStore();
@@ -105,6 +110,7 @@ export default function WorkspacePage() {
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState("");
+  const [loadedTemplateSignature, setLoadedTemplateSignature] = useState("");
 
   useEffect(() => {
     api.listTemplates()
@@ -157,10 +163,15 @@ export default function WorkspacePage() {
 
   useEffect(() => {
     if (!selectedTemplate) return;
+    const signature = templateSignature(selectedTemplate);
+    if (loadedTemplateSignature === signature) return;
     if (selectedTemplate.proposal_family) {
       store.setProposalFamily(selectedTemplate.proposal_family);
     }
-    if (!selectedTemplate.sections?.length) return;
+    if (!selectedTemplate.sections?.length) {
+      setLoadedTemplateSignature(signature);
+      return;
+    }
     store.setToc(
       selectedTemplate.sections.map((section, idx) => ({
         id: `${section.title}-${idx}`,
@@ -183,7 +194,8 @@ export default function WorkspacePage() {
         generated_at: "",
       }))
     );
-  }, [selectedTemplate, store]);
+    setLoadedTemplateSignature(signature);
+  }, [selectedTemplate, loadedTemplateSignature]);
 
   const title = useMemo(
     () =>
