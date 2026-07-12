@@ -34,6 +34,10 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip())
 
 
+def _normalized_words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", (text or "").lower())
+
+
 def _markdown_headings(text: str) -> list[str]:
     found = re.findall(r"(?m)^\s{0,3}#{1,6}\s+(.+?)\s*$", text or "")
     if found:
@@ -131,7 +135,80 @@ def _validate_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief) 
         needle = (phrase or "").strip().lower()
         if needle and needle in lowered and needle not in reference_lower:
             raise LLMError(f"unsupported claim introduced: {phrase}")
+    client_name = _clean(req.context.client_name)
+    if client_name and client_name.lower() not in lowered:
+        notes.append("client name not present in adapted output")
     return notes
+
+
+def _needs_retry(content: str, req: AdaptSectionRequest) -> bool:
+    cleaned = _clean(content)
+    if not cleaned:
+        return True
+    client_name = _clean(req.context.client_name)
+    if client_name and client_name.lower() not in cleaned.lower():
+        return True
+    if req.prompt or req.instruction:
+        ref_words = _normalized_words(req.reference_content)
+        out_words = _normalized_words(cleaned)
+        if ref_words and out_words:
+            overlap = sum(1 for a, b in zip(ref_words, out_words) if a == b)
+            similarity = overlap / max(min(len(ref_words), len(out_words)), 1)
+            if similarity > 0.82:
+                return True
+    return False
+
+
+async def _retry_adaptation(
+    req: AdaptSectionRequest,
+    brief: ProposalBrief,
+    evidence_lines: list[str],
+    initial_content: str,
+) -> str:
+    llm = get_llm()
+    client_name = _clean(req.context.client_name) or "the target client"
+    retry_prompt = f"""
+Revise the section below because the first adaptation did not sufficiently apply the master prompt.
+
+You must:
+- explicitly incorporate the client name "{client_name}" naturally in the section;
+- apply the user prompt and section instruction materially, not cosmetically;
+- keep the reference structure and professional proposal tone;
+- avoid commentary and unsupported claims;
+- make real edits where the prompt requires edits.
+
+MASTER PROMPT
+{req.prompt or "(none)"}
+
+SECTION INSTRUCTION
+{req.instruction or "(none)"}
+
+CHANGE PLAN
+{chr(10).join(f"- {item}" for item in brief.must_change[:10]) or "- Apply the requested client/context changes."}
+
+CLIENT FACTS
+{chr(10).join(f"- {item}" for item in _context_facts(req)) or "- none"}
+
+RETRIEVED SUPPORTING FACTS
+{chr(10).join(f"- {item}" for item in evidence_lines[:18])}
+
+REFERENCE SECTION
+{req.reference_content}
+
+FIRST ADAPTATION THAT MUST BE IMPROVED
+{initial_content}
+
+Return final proposal content only.
+"""
+    return await llm.chat(
+        [
+            {"role": "system", "content": "You revise proposal sections and must apply the master prompt precisely."},
+            {"role": "user", "content": retry_prompt},
+        ],
+        model=req.model,
+        temperature=0.12,
+        max_tokens=2200,
+    )
 
 
 async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
@@ -214,6 +291,8 @@ Rules:
         temperature=0.15,
         max_tokens=2200,
     )
+    if _needs_retry(content, req):
+        content = await _retry_adaptation(req, brief, evidence_lines, content)
     notes = _validate_output(content, req, brief)
     section = SectionResult(
         title=req.section_title,
