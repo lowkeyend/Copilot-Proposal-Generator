@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+import urllib.request
 
 from app.config import get_settings
 from app.models.schemas import (
@@ -81,6 +82,32 @@ from app.services.storage_service import get_storage
 
 router = APIRouter()
 settings = get_settings()
+
+
+def _ensure_bootstrap_template_artifacts() -> list[TemplateDocumentArtifact]:
+    storage = get_storage()
+    artifacts = storage.load_template_artifacts()
+    if artifacts:
+        return artifacts
+
+    template_path = settings.proposal_template_path
+    if not template_path.exists() and settings.proposal_template_url.strip():
+        template_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with urllib.request.urlopen(settings.proposal_template_url.strip(), timeout=20) as response:
+                template_path.write_bytes(response.read())
+        except Exception:
+            return []
+
+    if not template_path.exists():
+        return []
+
+    try:
+        artifact = parse_template_docx(template_path, proposal_family="Technical Upgrade")
+        storage.upsert_template_artifact(artifact)
+        return [artifact]
+    except Exception:
+        return []
 
 
 # --------------------------------------------------------------------------
@@ -491,7 +518,7 @@ async def upload_workspace_image(file: UploadFile = File(...)) -> dict:
 def list_templates() -> dict:
     discovered = [t.model_dump() for t in load_registry()]
     user_templates = [t.model_dump() for t in get_storage().load_templates()]
-    artifacts = [a.model_dump() for a in get_storage().load_template_artifacts()]
+    artifacts = [a.model_dump() for a in _ensure_bootstrap_template_artifacts()]
     return {
         "user": user_templates,
         "discovered": discovered,
