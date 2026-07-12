@@ -19,6 +19,7 @@ import { useProposalStore } from "@/lib/store";
 import type {
   ReviewIssue,
   SectionResult,
+  TemplateBlock,
   TemplateDocumentArtifact,
   TemplateImage,
   TemplateSectionNode,
@@ -69,6 +70,22 @@ function collectSectionTables(node: TemplateSectionNode): string[] {
       return [table.caption || "", header, separator, ...lines.slice(1)].filter(Boolean).join("\n");
     });
   return [...current, ...(node.subsections || []).flatMap((child) => collectSectionTables(child))];
+}
+
+function collectSectionTitles(node: TemplateSectionNode): string[] {
+  return [node.title, ...(node.subsections || []).flatMap((child) => collectSectionTitles(child))];
+}
+
+function sectionBlocks(template: TemplateDocumentArtifact | null, node: TemplateSectionNode): TemplateBlock[] {
+  if (!template) return [];
+  const titles = new Set(collectSectionTitles(node).map((item) => item.trim().toLowerCase()));
+  return (template.blocks || [])
+    .filter((block) => {
+      const blockTitle = (block.section_title || "").trim().toLowerCase();
+      const blockText = (block.text || "").trim().toLowerCase();
+      return titles.has(blockTitle) || (block.kind === "heading" && titles.has(blockText));
+    })
+    .sort((a, b) => a.order - b.order);
 }
 
 function templateBody(node: TemplateSectionNode): string {
@@ -245,6 +262,7 @@ export default function WorkspacePage() {
           store.context.intake.current_version,
           store.context.intake.target_version
         ),
+        blocks: sectionBlocks(selectedTemplate, section),
         evidence: [],
         images: collectSectionImages(section),
         locked: isStaticSection(section.title),
@@ -271,6 +289,7 @@ export default function WorkspacePage() {
             store.context.intake.current_version,
             store.context.intake.target_version
           ),
+          blocks: sectionBlocks(selectedTemplate, referenceNode),
         };
       })
     );
@@ -301,6 +320,7 @@ export default function WorkspacePage() {
       const res = await api.adaptSection({
         section_title: existing?.title || referenceNode?.title || toc?.title || "Section",
         reference_content: referenceNode ? templateBody(referenceNode) : existing?.content || "",
+        reference_blocks: referenceNode ? sectionBlocks(selectedTemplate, referenceNode) : existing?.blocks || [],
         context: store.context,
         proposal_family: store.proposalFamily,
         prompt: store.prompt,
@@ -315,7 +335,11 @@ export default function WorkspacePage() {
       store.upsertSection({
         ...res.section,
         id: sectionId,
-        images: existing?.images || [],
+        images:
+          (res.section.blocks || [])
+            .filter((block) => block.kind === "image" && block.image)
+            .map((block) => block.image!)
+            .filter(Boolean) || existing?.images || [],
         locked: existing?.locked || false,
       });
     } catch (e: any) {
@@ -391,15 +415,24 @@ export default function WorkspacePage() {
       const section = store.sections.find((item) => item.id === sectionId);
       if (!section) return;
       const nextImages = [...(section.images || [])];
-      const current = nextImages[imageIndex];
+      const current = nextImages.find((image) => image.index === imageIndex);
       if (!current) return;
-      nextImages[imageIndex] = {
-        ...current,
-        filename: uploaded.filename,
-        asset_path: uploaded.asset_path,
-        asset_url: uploaded.asset_url,
-      };
-      store.updateSection(sectionId, { images: nextImages });
+      const imageArrayIndex = nextImages.findIndex((image) => image.index === imageIndex);
+      nextImages[imageArrayIndex] = { ...current, filename: uploaded.filename, asset_path: uploaded.asset_path, asset_url: uploaded.asset_url };
+      const nextBlocks = (section.blocks || []).map((block) => {
+        if (block.kind !== "image" || !block.image) return block;
+        if (block.image.index !== current.index) return block;
+        return {
+          ...block,
+          image: {
+            ...block.image,
+            filename: uploaded.filename,
+            asset_path: uploaded.asset_path,
+            asset_url: uploaded.asset_url,
+          },
+        };
+      });
+      store.updateSection(sectionId, { images: nextImages, blocks: nextBlocks });
     } catch (e: any) {
       setError(e.message || "Image upload failed.");
     }
@@ -409,8 +442,14 @@ export default function WorkspacePage() {
     const section = store.sections.find((item) => item.id === sectionId);
     if (!section) return;
     const nextImages = [...(section.images || [])];
-    nextImages.splice(imageIndex, 1);
-    store.updateSection(sectionId, { images: nextImages });
+    const imageArrayIndex = nextImages.findIndex((image) => image.index === imageIndex);
+    if (imageArrayIndex === -1) return;
+    const removed = nextImages[imageArrayIndex];
+    nextImages.splice(imageArrayIndex, 1);
+    const nextBlocks = (section.blocks || []).filter(
+      (block) => !(block.kind === "image" && block.image && removed && block.image.index === removed.index)
+    );
+    store.updateSection(sectionId, { images: nextImages, blocks: nextBlocks });
   }
 
   return (
@@ -715,7 +754,6 @@ export default function WorkspacePage() {
                       </div>
                     ) : (
                       store.sections.map((section, index) => {
-                        const images = section.images || [];
                         return (
                           <div key={section.id} className="space-y-3">
                             <SectionCard
@@ -729,37 +767,9 @@ export default function WorkspacePage() {
                               onMove={(dir) => store.moveSection(section.id, dir)}
                               onEdit={(patch) => store.updateSection(section.id, patch)}
                               onShowEvidence={() => setEvidenceFor(section)}
+                              onReplaceImage={(imageIndex, file) => replaceSectionImage(section.id, imageIndex, file)}
+                              onDeleteImage={(imageIndex) => deleteSectionImage(section.id, imageIndex)}
                             />
-                            {images.map((image, imageIndex) => (
-                              <div key={`${section.id}-${image.index}-${imageIndex}`} className="overflow-hidden rounded-2xl border border-border bg-muted/10 p-3">
-                                <img
-                                  src={assetUrl(image.asset_url)}
-                                  alt={image.caption || image.filename || section.title}
-                                  className="max-h-[360px] w-full rounded-xl object-contain"
-                                />
-                                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                                  <div className="text-xs text-muted-foreground">{image.caption || image.filename}</div>
-                                  <div className="flex items-center gap-2">
-                                    <label className="cursor-pointer rounded-md border border-border px-3 py-1 text-xs hover:bg-white">
-                                      Replace PNG
-                                      <input
-                                        type="file"
-                                        accept=".png,.jpg,.jpeg,.gif,.webp"
-                                        className="hidden"
-                                        onChange={(e) => replaceSectionImage(section.id, imageIndex, e.target.files?.[0] || null)}
-                                      />
-                                    </label>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => deleteSectionImage(section.id, imageIndex)}
-                                    >
-                                      Delete Picture
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
                           </div>
                         );
                       })

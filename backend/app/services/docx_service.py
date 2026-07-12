@@ -25,7 +25,7 @@ from docx.shared import Inches, Pt, RGBColor
 from docx.text.paragraph import Paragraph
 
 from app.config import get_settings
-from app.models.schemas import ClientContext, SectionResult
+from app.models.schemas import ClientContext, SectionResult, TemplateBlock
 
 BRAND = RGBColor(0x1F, 0x3A, 0x5F)  # deep navy
 ACCENT = RGBColor(0x2E, 0x6F, 0x8E)
@@ -253,8 +253,11 @@ class DocxComposer:
     def _add_sections(self, doc: Document, sections: list[SectionResult]) -> None:
         for idx, section in enumerate(sections, 1):
             doc.add_heading(f"{idx}. {section.title}", level=1)
-            self._render_markdownish(doc, section.content)
-            self._render_evidence_images(doc, section)
+            if getattr(section, "blocks", None):
+                self._render_blocks(doc, section.blocks)
+            else:
+                self._render_markdownish(doc, section.content)
+                self._render_evidence_images(doc, section)
             doc.add_paragraph()
 
     def _render_evidence_images(self, doc: Document, section: SectionResult) -> None:
@@ -411,13 +414,19 @@ class DocxComposer:
             if paragraph is None:
                 heading = self._find_heading(doc, section.title)
                 if heading is not None:
-                    self._replace_heading_section(doc, heading, section.content)
-                    self._render_evidence_images(doc, section)
+                    if getattr(section, "blocks", None):
+                        self._replace_heading_section_with_blocks(doc, heading, section.blocks)
+                    else:
+                        self._replace_heading_section(doc, heading, section.content)
+                        self._render_evidence_images(doc, section)
                     inserted_any = True
                 continue
             _clear_paragraph(paragraph)
-            self._render_markdownish_into_paragraph(doc, paragraph, section.content)
-            self._render_evidence_images(doc, section)
+            if getattr(section, "blocks", None):
+                self._render_blocks_into_paragraph(doc, paragraph, section.blocks)
+            else:
+                self._render_markdownish_into_paragraph(doc, paragraph, section.content)
+                self._render_evidence_images(doc, section)
             inserted_any = True
 
         collection_token = self._find_paragraph(doc, "{{SECTIONS}}")
@@ -425,8 +434,11 @@ class DocxComposer:
             _clear_paragraph(collection_token)
             for section in sections:
                 doc.add_heading(section.title, level=1)
-                self._render_markdownish(doc, section.content)
-                self._render_evidence_images(doc, section)
+                if getattr(section, "blocks", None):
+                    self._render_blocks(doc, section.blocks)
+                else:
+                    self._render_markdownish(doc, section.content)
+                    self._render_evidence_images(doc, section)
                 doc.add_paragraph()
             inserted_any = True
 
@@ -445,6 +457,130 @@ class DocxComposer:
         for block in rest:
             p = doc.add_paragraph()
             self._add_inline(p, block)
+
+    def _render_blocks_into_paragraph(self, doc: Document, paragraph, blocks: list[TemplateBlock]) -> None:
+        if not blocks:
+            return
+        first_text = next((block.text for block in blocks if block.kind in {"heading", "paragraph"} and block.text.strip()), "")
+        if first_text:
+            self._add_inline(paragraph, first_text)
+        cursor = paragraph
+        for block in blocks[1:]:
+            cursor = self._render_block_after(cursor, block)
+
+    def _replace_heading_section_with_blocks(self, doc: Document, heading, blocks: list[TemplateBlock]) -> None:
+        current_level = self._paragraph_heading_level(heading)
+        cursor = heading._element.getnext()
+        removable = []
+
+        while cursor is not None:
+            next_cursor = cursor.getnext()
+            paragraph = next((item for item in doc.paragraphs if item._element == cursor), None)
+            if paragraph is not None:
+                style_name = (getattr(getattr(paragraph, "style", None), "name", "") or "").lower()
+                if "heading" in style_name or style_name.startswith("cn head"):
+                    next_level = self._paragraph_heading_level(paragraph)
+                    if next_level <= current_level:
+                        break
+                if not _element_has_visual(cursor):
+                    removable.append(cursor)
+            elif cursor.tag.endswith("}tbl"):
+                if not _element_has_visual(cursor):
+                    removable.append(cursor)
+            else:
+                if not _element_has_visual(cursor):
+                    removable.append(cursor)
+            cursor = next_cursor
+        for element in removable:
+            parent = element.getparent()
+            if parent is not None:
+                parent.remove(element)
+        cursor_p = heading
+        for block in blocks:
+            if block.kind == "heading":
+                if block.heading_level <= 1:
+                    heading.text = block.text
+                    cursor_p = heading
+                    continue
+            cursor_p = self._render_block_after(cursor_p, block)
+
+    def _render_block_after(self, cursor: Paragraph, block: TemplateBlock) -> Paragraph:
+        if block.kind == "heading":
+            style = "Heading 2" if block.heading_level <= 2 else "Heading 3"
+            created = _paragraph_after(cursor, style=style)
+            self._add_inline(created, block.text)
+            return created
+        if block.kind == "paragraph":
+            created = _paragraph_after(cursor)
+            self._add_inline(created, block.text)
+            return created
+        if block.kind == "list":
+            created = cursor
+            items = block.items or [line.strip() for line in block.text.splitlines() if line.strip()]
+            for item in items:
+                created = _paragraph_after(created, style="List Bullet")
+                self._add_inline(created, item)
+            return created
+        if block.kind == "table":
+            created = _paragraph_after(cursor)
+            rows = block.table_rows or []
+            if not rows:
+                return created
+            cols = max(len(row) for row in rows)
+            table = created._parent.add_table(rows=0, cols=cols)
+            table._element.getparent().remove(table._element)
+            created._p.addnext(table._element)
+            table.style = "Light Grid Accent 1"
+            for ridx, row in enumerate(rows):
+                cells = table.add_row().cells
+                for cidx in range(cols):
+                    val = row[cidx] if cidx < len(row) else ""
+                    _set_cell_text(cells[cidx], val, bold=(ridx == 0))
+            return created
+        if block.kind == "image" and block.image:
+            created = _paragraph_after(cursor)
+            path = Path(block.image.asset_path or "")
+            if not path.is_absolute():
+                path = self.settings.assets_path / path
+            if path.exists():
+                created.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                created.add_run().add_picture(str(path), width=Inches(5.9))
+                caption = _paragraph_after(created)
+                caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = caption.add_run(block.image.caption or block.image.filename or "")
+                run.italic = True
+                run.font.size = Pt(8.5)
+                run.font.name = BODY_FONT
+                run.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+                return caption
+            return created
+        return cursor
+
+    def _render_blocks(self, doc: Document, blocks: list[TemplateBlock]) -> None:
+        for block in blocks:
+            if block.kind == "heading":
+                level = 2 if block.heading_level <= 2 else 3
+                doc.add_heading(block.text, level=level)
+            elif block.kind == "paragraph":
+                p = doc.add_paragraph()
+                self._add_inline(p, block.text)
+            elif block.kind == "list":
+                for item in block.items or [line.strip() for line in block.text.splitlines() if line.strip()]:
+                    p = doc.add_paragraph(style="List Bullet")
+                    self._add_inline(p, item)
+            elif block.kind == "table":
+                rows = block.table_rows or []
+                if not rows:
+                    continue
+                table = doc.add_table(rows=0, cols=max(len(row) for row in rows))
+                table.style = "Light Grid Accent 1"
+                for ridx, row in enumerate(rows):
+                    cells = table.add_row().cells
+                    for cidx in range(len(cells)):
+                        val = row[cidx] if cidx < len(row) else ""
+                        _set_cell_text(cells[cidx], val, bold=(ridx == 0))
+            elif block.kind == "image" and block.image:
+                self._render_block_after(doc.add_paragraph(), block)
 
     def _render_markdownish_after(self, anchor: Paragraph, content: str) -> Paragraph:
         lines = self._sanitize_render_text(content).splitlines()

@@ -10,6 +10,7 @@ from app.models.schemas import (
     AdaptationChange,
     ProposalBrief,
     SectionResult,
+    TemplateBlock,
 )
 from app.services.llm_service import LLMError, get_llm
 
@@ -227,6 +228,97 @@ def _deterministic_patch(req: AdaptSectionRequest, evidence_lines: list[str]) ->
             )
         patched.append(updated)
     return _apply_evidence_line_overrides("\n".join(patched), req, evidence_lines)
+
+
+def _patch_reference_blocks(req: AdaptSectionRequest, evidence_lines: list[str]) -> list[TemplateBlock]:
+    if not req.reference_blocks:
+        return []
+    patched_content = _deterministic_patch(req, evidence_lines)
+    patched_lines = [line.rstrip() for line in patched_content.splitlines()]
+    heading_texts = [line.lstrip("#").strip() for line in patched_lines if line.strip().startswith("#")]
+    paragraph_lines = [line.strip() for line in patched_lines if line.strip() and not line.strip().startswith("#")]
+    heading_idx = 0
+    paragraph_idx = 0
+    patched_blocks: list[TemplateBlock] = []
+    for block in req.reference_blocks:
+        next_block = block.model_copy(deep=True)
+        if next_block.kind == "heading":
+            if heading_idx < len(heading_texts):
+                next_block.text = heading_texts[heading_idx]
+                next_block.section_title = heading_texts[heading_idx]
+            heading_idx += 1
+        elif next_block.kind in {"paragraph", "list"}:
+            if paragraph_idx < len(paragraph_lines):
+                next_block.text = paragraph_lines[paragraph_idx]
+                if next_block.kind == "list":
+                    next_block.items = [paragraph_lines[paragraph_idx]]
+            paragraph_idx += 1
+        elif next_block.kind == "table" and next_block.table_rows:
+            next_block.table_rows = [
+                [_apply_client_name_guardrail(cell, req, evidence_lines) for cell in row]
+                for row in next_block.table_rows
+            ]
+        elif next_block.kind == "image" and next_block.image is not None:
+            next_block.image = next_block.image.model_copy(
+                update={
+                    "caption": _apply_client_name_guardrail(next_block.image.caption or "", req, evidence_lines),
+                    "section": _apply_client_name_guardrail(next_block.image.section or "", req, evidence_lines),
+                }
+            )
+        next_block.text = _apply_client_name_guardrail(next_block.text or "", req, evidence_lines)
+        patched_blocks.append(next_block)
+    return patched_blocks
+
+
+def _blocks_from_content(req: AdaptSectionRequest, content: str) -> list[TemplateBlock]:
+    blocks: list[TemplateBlock] = []
+    lines = [line.rstrip() for line in (content or "").splitlines()]
+    order = 0
+    buffer: list[str] = []
+
+    def flush_paragraph() -> None:
+        nonlocal order, buffer
+        text = "\n".join(line.strip() for line in buffer if line.strip()).strip()
+        if not text:
+            buffer = []
+            return
+        kind = "list" if all(re.match(r"^[-*]\s+", item.strip()) for item in buffer if item.strip()) else "paragraph"
+        items = [re.sub(r"^[-*]\s+", "", item.strip()) for item in buffer if item.strip()] if kind == "list" else []
+        blocks.append(
+            TemplateBlock(
+                kind=kind,
+                section_title=req.section_title,
+                text=text,
+                items=items,
+                order=order,
+            )
+        )
+        order += 1
+        buffer = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            flush_paragraph()
+            continue
+        if stripped.startswith("#"):
+            flush_paragraph()
+            level = len(stripped) - len(stripped.lstrip("#"))
+            blocks.append(
+                TemplateBlock(
+                    kind="heading",
+                    section_title=req.section_title,
+                    heading_level=max(level, 1),
+                    text=stripped.lstrip("#").strip(),
+                    order=order,
+                    editable=False,
+                )
+            )
+            order += 1
+            continue
+        buffer.append(stripped)
+    flush_paragraph()
+    return blocks
 
 
 def _markdown_headings(text: str) -> list[str]:
@@ -490,10 +582,12 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
 
     if _should_use_patch_only(effective_req):
         content = _deterministic_patch(effective_req, evidence_lines)
+        blocks = _patch_reference_blocks(effective_req, evidence_lines)
         notes = _validate_output(content, effective_req, brief)
         section = SectionResult(
             title=req.section_title,
             content=content.strip(),
+            blocks=blocks,
             evidence=evidence,
             locked=False,
             model=f"{llm.resolve_model(req.model)}:patch",
@@ -563,6 +657,7 @@ Rules:
     section = SectionResult(
         title=req.section_title,
         content=content.strip(),
+        blocks=_blocks_from_content(effective_req, content),
         evidence=evidence,
         locked=False,
         model=llm.resolve_model(req.model),

@@ -426,6 +426,7 @@ class ProposalBrief(BaseModel):
 class AdaptSectionRequest(BaseModel):
     section_title: str
     reference_content: str
+    reference_blocks: list[TemplateBlock] = Field(default_factory=list)
     context: ClientContext
     proposal_family: str
     prompt: str = ""
@@ -454,6 +455,7 @@ class SectionResult(BaseModel):
     id: str = Field(default_factory=_uid)
     title: str
     content: str
+    blocks: list[TemplateBlock] = Field(default_factory=list)
     evidence: list[EvidenceChunk] = Field(default_factory=list)
     images: list[TemplateImage] = Field(default_factory=list)
     locked: bool = False

@@ -33,6 +33,19 @@ interface Props {
   onMove: (dir: -1 | 1) => void;
   onEdit: (patch: Partial<SectionResult>) => void;
   onShowEvidence: () => void;
+  onReplaceImage: (imageIndex: number, file: File | null) => void;
+  onDeleteImage: (imageIndex: number) => void;
+}
+
+const CLOUD_BASE = "https://fawadsidd17-proposal-copilot-backend.hf.space";
+
+function assetUrl(path: string) {
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  if (typeof window !== "undefined" && window.location.hostname.endsWith(".vercel.app")) {
+    return `${CLOUD_BASE}${path}`;
+  }
+  return `http://localhost:8000${path}`;
 }
 
 export function SectionCard({
@@ -46,6 +59,8 @@ export function SectionCard({
   onMove,
   onEdit,
   onShowEvidence,
+  onReplaceImage,
+  onDeleteImage,
 }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(section.content);
@@ -56,6 +71,119 @@ export function SectionCard({
   function saveEdit() {
     onEdit({ content: draft, title: titleDraft });
     setEditing(false);
+  }
+
+  const renderedImages = new Map<number, number>();
+
+  function renderBlockImage(blockImage: NonNullable<SectionResult["blocks"]>[number]["image"]) {
+    if (!blockImage) return null;
+    const key = blockImage.index;
+    const count = renderedImages.get(key) ?? 0;
+    renderedImages.set(key, count + 1);
+    return (
+      <div key={`image-${blockImage.index}-${count}`} className="my-4 overflow-hidden rounded-2xl border border-border bg-muted/10 p-3">
+        <img
+          src={assetUrl(blockImage.asset_url)}
+          alt={blockImage.caption || blockImage.filename || section.title}
+          className="max-h-[360px] w-full rounded-xl object-contain"
+        />
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs text-muted-foreground">{blockImage.caption || blockImage.filename}</div>
+          <div className="flex items-center gap-2">
+            <label className="cursor-pointer rounded-md border border-border px-3 py-1 text-xs hover:bg-white">
+              Replace PNG
+              <input
+                type="file"
+                accept=".png,.jpg,.jpeg,.gif,.webp"
+                className="hidden"
+                onChange={(e) => onReplaceImage(blockImage.index, e.target.files?.[0] || null)}
+              />
+            </label>
+            <Button variant="outline" size="sm" onClick={() => onDeleteImage(blockImage.index)}>
+              Delete Picture
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderBlocks() {
+    if (!section.blocks?.length) {
+      return (
+        <div
+          className="prose-proposal max-h-[420px] overflow-y-auto scroll-thin text-sm"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(section.content) }}
+        />
+      );
+    }
+    return (
+      <div className="max-h-[720px] overflow-y-auto scroll-thin text-sm">
+        <div className="space-y-3">
+          {section.blocks.map((block, idx) => {
+            if (block.kind === "heading") {
+              const Tag = block.heading_level <= 1 ? "h2" : block.heading_level === 2 ? "h3" : "h4";
+              return (
+                <Tag
+                  key={block.block_id || `${block.kind}-${idx}`}
+                  className={
+                    block.heading_level <= 1
+                      ? "mt-1 text-xl font-bold text-primary"
+                      : block.heading_level === 2
+                        ? "text-lg font-semibold text-slate-900"
+                        : "text-base font-semibold text-slate-800"
+                  }
+                >
+                  {block.text}
+                </Tag>
+              );
+            }
+            if (block.kind === "paragraph") {
+              return (
+                <p key={block.block_id || `${block.kind}-${idx}`} className="leading-7 text-slate-700">
+                  {block.text}
+                </p>
+              );
+            }
+            if (block.kind === "list") {
+              const items = block.items?.length ? block.items : block.text.split(/\n+/).filter(Boolean);
+              return (
+                <ul key={block.block_id || `${block.kind}-${idx}`} className="list-disc space-y-1 pl-5 text-slate-700">
+                  {items.map((item, itemIndex) => (
+                    <li key={`${block.block_id || idx}-${itemIndex}`}>{item}</li>
+                  ))}
+                </ul>
+              );
+            }
+            if (block.kind === "table") {
+              const rows = block.table_rows || [];
+              if (!rows.length) return null;
+              return (
+                <div key={block.block_id || `${block.kind}-${idx}`} className="overflow-hidden rounded-xl border border-border">
+                  <table className="w-full border-collapse text-left text-[13px]">
+                    <tbody>
+                      {rows.map((row, rowIndex) => (
+                        <tr key={`${block.block_id || idx}-row-${rowIndex}`} className={rowIndex === 0 ? "bg-muted/40" : "bg-white"}>
+                          {row.map((cell, cellIndex) => (
+                            <td key={`${block.block_id || idx}-cell-${rowIndex}-${cellIndex}`} className="border border-border px-3 py-2 align-top">
+                              <span className={rowIndex === 0 ? "font-semibold text-slate-900" : "text-slate-700"}>{cell}</span>
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            }
+            if (block.kind === "image") {
+              return renderBlockImage(block.image);
+            }
+            return null;
+          })}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -170,12 +298,7 @@ export function SectionCard({
               <Spinner /> Generating…
             </div>
           ) : section.content ? (
-            <div
-              className="prose-proposal max-h-[420px] overflow-y-auto scroll-thin text-sm"
-              dangerouslySetInnerHTML={{
-                __html: renderMarkdown(section.content),
-              }}
-            />
+            renderBlocks()
           ) : (
             <p className="py-6 text-sm text-muted-foreground">
               Not generated yet.

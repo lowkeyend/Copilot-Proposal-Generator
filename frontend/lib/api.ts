@@ -21,6 +21,7 @@ import type {
   RfpParseResponse,
   ReviewIssue,
   SectionResult,
+  TemplateBlock,
   TocSection,
   VersionMeta,
 } from "./types";
@@ -238,6 +239,7 @@ export const api = {
   adaptSection: (body: {
     section_title: string;
     reference_content: string;
+    reference_blocks?: TemplateBlock[];
     context: ClientContext;
     proposal_family: string;
     prompt?: string;

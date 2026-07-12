@@ -161,6 +161,7 @@ export interface SectionResult {
   id: string;
   title: string;
   content: string;
+  blocks?: TemplateBlock[];
   evidence: EvidenceChunk[];
   images?: TemplateImage[];
   locked: boolean;
