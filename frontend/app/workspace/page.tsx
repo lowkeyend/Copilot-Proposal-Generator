@@ -216,7 +216,7 @@ export default function WorkspacePage() {
   useEffect(() => {
     if (!selectedTemplate) return;
     const signature = templateSignature(selectedTemplate);
-    if (loadedTemplateSignature === signature) return;
+    if (loadedTemplateSignature === signature && store.sections.length > 0) return;
     if (selectedTemplate.proposal_family) {
       store.setProposalFamily(selectedTemplate.proposal_family);
     }
@@ -253,7 +253,7 @@ export default function WorkspacePage() {
       }))
     );
     setLoadedTemplateSignature(signature);
-  }, [selectedTemplate, loadedTemplateSignature]);
+  }, [selectedTemplate, loadedTemplateSignature, store.sections.length]);
 
   useEffect(() => {
     if (!selectedTemplate) return;
@@ -380,6 +380,7 @@ export default function WorkspacePage() {
     setVersionsOpen(false);
     setExporting(false);
     setExportUrl("");
+    setLoadedTemplateSignature("");
     router.push("/");
   }
 
