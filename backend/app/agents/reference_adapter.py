@@ -45,10 +45,9 @@ _PATCH_TRIGGER_WORDS = (
     "expand",
     "shorter",
     "longer",
-    "add",
-    "remove",
-    "change",
-    "tailor",
+    "write a new",
+    "draft a new",
+    "completely rewrite",
 )
 
 
@@ -207,6 +206,8 @@ def _apply_evidence_line_overrides(content: str, req: AdaptSectionRequest, evide
 def _should_use_patch_only(req: AdaptSectionRequest) -> bool:
     combined = f"{req.prompt or ''} {req.instruction or ''}".lower()
     if not combined.strip():
+        return True
+    if "preserve the reference structure" in combined or "preserve the reference structure and wording style" in combined:
         return True
     return not any(word in combined for word in _PATCH_TRIGGER_WORDS)
 

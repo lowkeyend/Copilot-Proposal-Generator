@@ -6,7 +6,7 @@ from app.agents.section_writer import (
     _prune_unsupported_sentences,
     _validation_issues,
 )
-from app.agents.reference_adapter import _deterministic_patch, _effective_versions, _patch_reference_blocks
+from app.agents.reference_adapter import _deterministic_patch, _effective_versions, _patch_reference_blocks, _should_use_patch_only
 from app.models.schemas import AdaptSectionRequest, ClientContext, EvidenceChunk, GenerateSectionRequest, IntakeProfile, TemplateBlock
 
 
@@ -274,3 +274,23 @@ def test_patch_reference_blocks_preserves_list_structure() -> None:
     assert blocks[3].kind == "list"
     assert blocks[3].items == ["Hardware, operating system, middleware, compiler, and database compatibility assessment"]
     assert blocks[4].items == ["Review of infrastructure readiness for target release"]
+
+
+def test_preserve_structure_prompt_stays_in_patch_mode() -> None:
+    req = AdaptSectionRequest(
+        section_title="Scope of Work",
+        reference_content="## Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ",
+        reference_blocks=[],
+        context=ClientContext(
+            client_name="QIB",
+            industry="Banking",
+            project_type="Technical Upgrade",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(current_version="R19", target_version="R24"),
+        ),
+        proposal_family="Temenos",
+        prompt="Prepare a technical upgrade proposal for QIB. Replace all reference client names with QIB, change the upgrade from R17 to R24, preserve the reference structure and wording style.",
+    )
+
+    assert _should_use_patch_only(req) is True
