@@ -72,6 +72,26 @@ def _apply_client_name_guardrail(text: str, req: AdaptSectionRequest) -> str:
     return guarded.strip()
 
 
+def _prepare_reference_content(req: AdaptSectionRequest) -> str:
+    base = _apply_client_name_guardrail(req.reference_content, req)
+    current_version = _clean(req.context.intake.current_version)
+    target_version = _clean(req.context.intake.target_version)
+    if current_version and target_version and current_version != target_version:
+        base = re.sub(
+            r"\bfrom\s+release\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b",
+            f"from release {current_version} to {target_version}",
+            base,
+            flags=re.IGNORECASE,
+        )
+        base = re.sub(
+            r"\bfrom\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b",
+            f"from {current_version} to {target_version}",
+            base,
+            flags=re.IGNORECASE,
+        )
+    return base
+
+
 def _markdown_headings(text: str) -> list[str]:
     found = re.findall(r"(?m)^\s{0,3}#{1,6}\s+(.+?)\s*$", text or "")
     if found:
@@ -250,9 +270,11 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
     if not llm.available:
         raise LLMError("LLM generation is unavailable. Configure a valid API key in Settings.")
 
+    prepared_reference = _prepare_reference_content(req)
+
     evidence = retrieve_for_section(
         section_title=req.section_title,
-        keywords=_markdown_headings(req.reference_content) or req.reference_headings or [],
+        keywords=_markdown_headings(prepared_reference) or req.reference_headings or [],
         context=req.context,
         proposal_family=req.proposal_family,
         top_k=req.top_k,
@@ -269,8 +291,9 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
         if fact:
             evidence_lines.append(f"[{label}] {fact[:420]}")
 
-    brief = await _build_brief(req, evidence_lines)
-    structure = _reference_structure(req.reference_content)
+    effective_req = req.model_copy(update={"reference_content": prepared_reference})
+    brief = await _build_brief(effective_req, evidence_lines)
+    structure = _reference_structure(prepared_reference)
     plan = [AdaptationChange(kind="preserve", detail=item) for item in brief.must_preserve[:6]]
     plan.extend(AdaptationChange(kind="replace", detail=item) for item in brief.must_change[:8])
 
@@ -290,7 +313,7 @@ SECTION INSTRUCTION
 {req.instruction or "(none)"}
 
 REFERENCE SECTION TO ADAPT
-{req.reference_content}
+{prepared_reference}
 
 REFERENCE STRUCTURE TO PRESERVE
 {structure}
@@ -325,10 +348,10 @@ Rules:
         temperature=0.15,
         max_tokens=2200,
     )
-    if _needs_retry(content, req):
-        content = await _retry_adaptation(req, brief, evidence_lines, content)
-    content = _apply_client_name_guardrail(content, req)
-    notes = _validate_output(content, req, brief)
+    if _needs_retry(content, effective_req):
+        content = await _retry_adaptation(effective_req, brief, evidence_lines, content)
+    content = _apply_client_name_guardrail(content, effective_req)
+    notes = _validate_output(content, effective_req, brief)
     section = SectionResult(
         title=req.section_title,
         content=content.strip(),

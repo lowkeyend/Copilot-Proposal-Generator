@@ -75,6 +75,7 @@ export interface TemplateTable {
   cols: number;
   style: string;
   caption: string;
+  data: string[][];
 }
 
 export interface TemplateImage {

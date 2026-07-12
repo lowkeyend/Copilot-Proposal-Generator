@@ -144,6 +144,7 @@ class TemplateTable(BaseModel):
     cols: int = 0
     style: str = ""
     caption: str = ""
+    data: list[list[str]] = Field(default_factory=list)
 
 
 class TemplateImage(BaseModel):

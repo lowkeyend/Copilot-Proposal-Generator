@@ -234,6 +234,7 @@ def parse_template_docx(path: str | Path, proposal_family: str = "") -> Template
                 cols=max((len(row) for row in rows), default=0),
                 style="",
                 caption="",
+                data=rows,
             )
             target.tables.append(table_node)
             blocks.append(

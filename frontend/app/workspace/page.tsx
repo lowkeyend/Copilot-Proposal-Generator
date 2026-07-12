@@ -58,7 +58,16 @@ function collectSectionImages(node: TemplateSectionNode): TemplateImage[] {
 function collectSectionTables(node: TemplateSectionNode): string[] {
   const current = (node.tables || [])
     .filter((table) => table.rows > 0 && table.cols > 0)
-    .map((table) => `Table (${table.rows}x${table.cols})${table.caption ? ` - ${table.caption}` : ""}`);
+    .map((table) => {
+      const lines = (table.data || []).map((row) => `| ${row.join(" | ")} |`);
+      if (!lines.length) {
+        return `Table (${table.rows}x${table.cols})${table.caption ? ` - ${table.caption}` : ""}`;
+      }
+      const header = lines[0];
+      const columnCount = Math.max((table.data?.[0] || []).length, 1);
+      const separator = `| ${Array.from({ length: columnCount }, () => "---").join(" | ")} |`;
+      return [table.caption || "", header, separator, ...lines.slice(1)].filter(Boolean).join("\n");
+    });
   return [...current, ...(node.subsections || []).flatMap((child) => collectSectionTables(child))];
 }
 
