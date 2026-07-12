@@ -148,13 +148,15 @@ async def _build_brief(req: AdaptSectionRequest, evidence_lines: list[str]) -> P
     client_name = _clean(req.context.client_name)
     current_version = _clean(req.context.intake.current_version)
     target_version = _clean(req.context.intake.target_version)
+    prompt_text = _clean(req.prompt)
+    instruction_text = _clean(req.instruction)
     deterministic = ProposalBrief(
         summary=f"Adapt {req.section_title} for {client_name or 'the target client'} using the selected context and prompt.",
         must_change=[
             *( [f"Replace any reference client name with {client_name}."] if client_name else [] ),
             *( [f"Reflect the upgrade path from {current_version} to {target_version}."] if current_version and target_version else [] ),
-            *( [f"Apply master prompt instructions: {req.prompt.strip()}"] if (req.prompt or '').strip() else [] ),
-            *( [f"Apply section instruction: {req.instruction.strip()}"] if (req.instruction or '').strip() else [] ),
+            *( [f"Apply master prompt instructions: {prompt_text}"] if prompt_text else [] ),
+            *( [f"Apply section instruction: {instruction_text}"] if instruction_text else [] ),
         ],
         must_preserve=[
             "Preserve the reference section structure and operational tone.",
@@ -162,7 +164,7 @@ async def _build_brief(req: AdaptSectionRequest, evidence_lines: list[str]) -> P
         ],
         forbidden_claims=list(_MARKETING_PHRASES),
         prompt_directives=[
-            item for item in [req.prompt.strip(), req.instruction.strip()] if item
+            item for item in [prompt_text, instruction_text] if item
         ],
     )
     prompt = f"""
@@ -369,7 +371,7 @@ REFERENCE STRUCTURE TO PRESERVE
 {structure}
 
 CHANGE PLAN
-{chr(10).join(f"- {item.detail}" for item in brief.must_change[:10]) or "- Apply only explicit client/version/scope changes."}
+{chr(10).join(f"- {item}" for item in brief.must_change[:10]) or "- Apply only explicit client/version/scope changes."}
 
 MUST PRESERVE
 {chr(10).join(f"- {item}" for item in brief.must_preserve[:10]) or "- Preserve the operational tone and structure of the reference."}
