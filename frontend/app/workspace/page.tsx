@@ -85,6 +85,14 @@ function templateSignature(template: TemplateDocumentArtifact | null) {
   return `${template.template_id}:${template.updated_at || ""}:${template.sections?.length || 0}`;
 }
 
+function todayLabel() {
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(new Date());
+}
+
 export default function WorkspacePage() {
   const router = useRouter();
   const store = useProposalStore();
@@ -183,12 +191,13 @@ export default function WorkspacePage() {
         description: section.paragraphs?.[0]?.text || section.title,
       }))
     );
-    store.setSections(
+      store.setSections(
       selectedTemplate.sections.map((section, idx) => ({
         id: `${section.title}-${idx}`,
         title: section.title,
         content: templateBody(section),
         evidence: [],
+        images: collectSectionImages(section),
         locked: isStaticSection(section.title),
         model: "reference-template",
         generated_at: "",
@@ -231,6 +240,7 @@ export default function WorkspacePage() {
       store.upsertSection({
         ...res.section,
         id: sectionId,
+        images: existing?.images || [],
         locked: existing?.locked || false,
       });
     } catch (e: any) {
@@ -298,6 +308,35 @@ export default function WorkspacePage() {
     router.push("/");
   }
 
+  async function replaceSectionImage(sectionId: string, imageIndex: number, file: File | null) {
+    if (!file) return;
+    try {
+      const uploaded = await api.uploadWorkspaceImage(file);
+      const section = store.sections.find((item) => item.id === sectionId);
+      if (!section) return;
+      const nextImages = [...(section.images || [])];
+      const current = nextImages[imageIndex];
+      if (!current) return;
+      nextImages[imageIndex] = {
+        ...current,
+        filename: uploaded.filename,
+        asset_path: uploaded.asset_path,
+        asset_url: uploaded.asset_url,
+      };
+      store.updateSection(sectionId, { images: nextImages });
+    } catch (e: any) {
+      setError(e.message || "Image upload failed.");
+    }
+  }
+
+  function deleteSectionImage(sectionId: string, imageIndex: number) {
+    const section = store.sections.find((item) => item.id === sectionId);
+    if (!section) return;
+    const nextImages = [...(section.images || [])];
+    nextImages.splice(imageIndex, 1);
+    store.updateSection(sectionId, { images: nextImages });
+  }
+
   return (
     <main className="mx-auto max-w-7xl px-4 py-6">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -346,7 +385,18 @@ export default function WorkspacePage() {
                 The system now adapts the selected reference proposal section-by-section instead of rewriting from scratch.
               </p>
             </div>
-            <div className="grid min-w-[320px] gap-3 sm:grid-cols-2">
+            <div className="grid min-w-[320px] gap-3 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Client Name
+                </label>
+                <input
+                  value={store.context.client_name}
+                  onChange={(e) => store.setContext({ client_name: e.target.value })}
+                  className="h-10 w-full rounded-md border border-input bg-white px-3 text-sm"
+                  placeholder="Bank Alfalah"
+                />
+              </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Reference Template
@@ -388,8 +438,11 @@ export default function WorkspacePage() {
               }}
               rows={4}
               className="w-full rounded-xl border border-input bg-white px-3 py-2 text-sm outline-none focus:border-primary"
-              placeholder="Describe the target client, version changes, scope deltas, exclusions, and any section-level instructions that should apply globally."
+              placeholder={`Example: Prepare a client-ready technical upgrade proposal for ${store.context.client_name || "Bank Alfalah"} using the selected reference template. Keep Company Profile unchanged. Adapt all variable sections for an established bank upgrading Temenos Transact from R20 to R26. Use only the selected source documents. Preserve the operational tone, section structure, and activity-based wording of the reference. Remove unsupported benefits language. Replace timeline assumptions with the current engagement context and update client names consistently throughout.`}
             />
+            <p className="mt-2 text-xs text-muted-foreground">
+              Example prompt: Prepare a technical upgrade proposal for {store.context.client_name || "Bank Alfalah"} from R20 to R26. Keep Company Profile static, preserve the reference structure, use only selected documents, and adapt Scope, Solution, Methodology, Governance, Timeline, Training, and Assumptions conservatively.
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -576,7 +629,7 @@ export default function WorkspacePage() {
                     <div className="mt-2 text-sm text-muted-foreground">
                       Template: {selectedTemplate ? `${selectedTemplate.proposal_family} - ${selectedTemplate.name}` : "None selected"}
                     </div>
-                    <div className="mt-1 text-xs text-muted-foreground">Date: {new Date().toLocaleDateString()}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">Date: {todayLabel()}</div>
                   </div>
 
                   <div className="mt-5 space-y-4">
@@ -586,20 +639,9 @@ export default function WorkspacePage() {
                       </div>
                     ) : (
                       store.sections.map((section, index) => {
-                        const referenceNode = referenceSections.get(section.id);
-                        const images = referenceNode ? collectSectionImages(referenceNode) : [];
+                        const images = section.images || [];
                         return (
                           <div key={section.id} className="space-y-3">
-                            {images.map((image) => (
-                              <div key={`${section.id}-${image.index}`} className="overflow-hidden rounded-2xl border border-border bg-muted/10 p-3">
-                                <img
-                                  src={assetUrl(image.asset_url)}
-                                  alt={image.caption || image.filename || section.title}
-                                  className="max-h-[360px] w-full rounded-xl object-contain"
-                                />
-                                <div className="mt-2 text-xs text-muted-foreground">{image.caption || image.filename}</div>
-                              </div>
-                            ))}
                             <SectionCard
                               section={section}
                               index={index}
@@ -612,6 +654,36 @@ export default function WorkspacePage() {
                               onEdit={(patch) => store.updateSection(section.id, patch)}
                               onShowEvidence={() => setEvidenceFor(section)}
                             />
+                            {images.map((image, imageIndex) => (
+                              <div key={`${section.id}-${image.index}-${imageIndex}`} className="overflow-hidden rounded-2xl border border-border bg-muted/10 p-3">
+                                <img
+                                  src={assetUrl(image.asset_url)}
+                                  alt={image.caption || image.filename || section.title}
+                                  className="max-h-[360px] w-full rounded-xl object-contain"
+                                />
+                                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                  <div className="text-xs text-muted-foreground">{image.caption || image.filename}</div>
+                                  <div className="flex items-center gap-2">
+                                    <label className="cursor-pointer rounded-md border border-border px-3 py-1 text-xs hover:bg-white">
+                                      Replace PNG
+                                      <input
+                                        type="file"
+                                        accept=".png,.jpg,.jpeg,.gif,.webp"
+                                        className="hidden"
+                                        onChange={(e) => replaceSectionImage(section.id, imageIndex, e.target.files?.[0] || null)}
+                                      />
+                                    </label>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => deleteSectionImage(section.id, imageIndex)}
+                                    >
+                                      Delete Picture
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         );
                       })

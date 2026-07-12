@@ -259,6 +259,10 @@ class DocxComposer:
 
     def _render_evidence_images(self, doc: Document, section: SectionResult) -> None:
         image_paths: list[str] = []
+        for image in getattr(section, "images", []) or []:
+            raw = getattr(image, "asset_path", "") or getattr(image, "asset_url", "")
+            if raw and raw not in image_paths:
+                image_paths.append(raw)
         for evidence in section.evidence or []:
             for path in getattr(evidence, "image_paths", []) or []:
                 if path not in image_paths:

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, ClipboardCopy, GripVertical, Layers3, Plus, Sparkles, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, ClipboardCopy, Download, GripVertical, Layers3, Plus, Sparkles, Trash2 } from "lucide-react";
+import { toPng } from "html-to-image";
 import { useProposalStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -93,6 +94,7 @@ export default function TimelineBuilderPage() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [startYear, setStartYear] = useState(DEFAULT_START_YEAR);
   const [endYear, setEndYear] = useState(DEFAULT_END_YEAR);
+  const chartRef = useRef<HTMLDivElement | null>(null);
 
   const safeStartYear = Math.min(startYear, endYear);
   const safeEndYear = Math.max(startYear, endYear);
@@ -219,6 +221,19 @@ export default function TimelineBuilderPage() {
     setEndYear(Math.max(normalizedStart, normalizedEnd));
   }
 
+  async function exportAsPng() {
+    if (!chartRef.current) return;
+    const dataUrl = await toPng(chartRef.current, {
+      cacheBust: true,
+      pixelRatio: 2,
+      backgroundColor: "#f5f7ef",
+    });
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = `timeline-${store.context.client_name || "proposal"}.png`;
+    link.click();
+  }
+
   return (
     <main className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-none flex-col gap-6 px-4 py-4 lg:px-6 xl:px-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -233,6 +248,10 @@ export default function TimelineBuilderPage() {
           <Button variant="outline" onClick={handlePromptCopy}>
             <ClipboardCopy className="h-4 w-4" />
             Copy timeline to prompt
+          </Button>
+          <Button variant="outline" onClick={exportAsPng}>
+            <Download className="h-4 w-4" />
+            Export PNG
           </Button>
         </div>
       </div>
@@ -336,7 +355,7 @@ export default function TimelineBuilderPage() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-x-auto overflow-y-hidden rounded-3xl border border-border bg-[#f5f7ef] shadow-[0_18px_50px_rgba(12,75,29,0.12)]">
+            <div ref={chartRef} className="flex-1 overflow-x-auto overflow-y-hidden rounded-3xl border border-border bg-[#f5f7ef] shadow-[0_18px_50px_rgba(12,75,29,0.12)]">
               <div className="w-max min-w-full pr-12">
                 <div
                   className="sticky top-0 z-30 grid border-b border-[#d7dfc7] bg-[#173d1e] text-[#eef6e5]"

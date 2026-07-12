@@ -464,6 +464,26 @@ def asset_file(asset_path: str) -> FileResponse:
     return FileResponse(str(path))
 
 
+@router.post("/assets/upload-image", tags=["assets"])
+async def upload_workspace_image(file: UploadFile = File(...)) -> dict:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Image file is required.")
+    ext = file.filename.lower().rsplit(".", 1)[-1] if "." in file.filename else ""
+    if ext not in {"png", "jpg", "jpeg", "gif", "bmp", "webp"}:
+        raise HTTPException(status_code=400, detail="Only common image formats are supported.")
+    folder = settings.assets_path / "workspace-images"
+    folder.mkdir(parents=True, exist_ok=True)
+    safe = "".join(ch for ch in file.filename if ch.isalnum() or ch in {"-", "_", "."}).strip("._") or "image"
+    target = folder / safe
+    content = await file.read()
+    target.write_bytes(content)
+    return {
+        "filename": target.name,
+        "asset_path": str(target),
+        "asset_url": f"/assets/workspace-images/{target.name}",
+    }
+
+
 # --------------------------------------------------------------------------
 # Templates CRUD
 # --------------------------------------------------------------------------

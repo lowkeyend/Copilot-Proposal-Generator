@@ -454,6 +454,7 @@ class SectionResult(BaseModel):
     title: str
     content: str
     evidence: list[EvidenceChunk] = Field(default_factory=list)
+    images: list[TemplateImage] = Field(default_factory=list)
     locked: bool = False
     model: str = ""
     generated_at: str = Field(default_factory=_now)

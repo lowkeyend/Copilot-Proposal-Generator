@@ -295,6 +295,15 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  uploadWorkspaceImage: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return uploadFetch<{ filename: string; asset_path: string; asset_url: string }>(
+      "/assets/upload-image",
+      form
+    );
+  },
+
   listTemplates: () =>
     jsonFetch<{ user: ProposalTemplate[]; discovered: ProposalTemplate[]; artifacts: TemplateDocumentArtifact[] }>(
       "/templates"

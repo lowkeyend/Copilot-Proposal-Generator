@@ -5,14 +5,12 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
-  { href: "/", label: "Start" },
   { href: "/workspace", label: "Workspace" },
   { href: "/templates", label: "Templates" },
   { href: "/knowledge-base", label: "Knowledge Base" },
   { href: "/docs-query", label: "Query from Doc" },
   { href: "/rfp-parser", label: "RFP Parser" },
   { href: "/insight-studio", label: "Insight Studio" },
-  { href: "/planner", label: "Planner" },
   { href: "/timeline", label: "Timeline Builder" },
   { href: "/workflow-maker", label: "Workflow Maker" },
   { href: "/settings", label: "Settings" },

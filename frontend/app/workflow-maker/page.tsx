@@ -32,7 +32,6 @@ const LIBRARY: Step[] = [
   { id: "rfp-parser", title: "Parse RFP", owner: "Bid Analyst", output: "Extract requirement facts, gaps, storyline, and intake fields", route: "/rfp-parser", source: "library" },
   { id: "query-docs", title: "Query KB", owner: "Solution Lead", output: "Answer clarifications from uploaded evidence only", route: "/docs-query", source: "library" },
   { id: "insight-studio", title: "Run Insight Studio", owner: "Proposal Lead", output: "Find scope leakage, contradictions, module gaps, manday drivers, and risks", route: "/insight-studio", source: "library" },
-  { id: "planner", title: "Generate Plan", owner: "PMO", output: "Produce next actions, decision gates, verifications, owners, and timelines", route: "/planner", source: "library" },
   { id: "timeline", title: "Build Timeline", owner: "Delivery Manager", output: "Sequence modules, workstreams, milestones, and dependencies", route: "/timeline", source: "library" },
   { id: "workspace", title: "Generate Sections", owner: "Proposal Writer", output: "Draft proposal sections using mapped RFP facts and retrieved evidence", route: "/workspace", source: "library" },
   { id: "review", title: "Consistency Review", owner: "Quality Lead", output: "Check client names, product naming, phase coherence, and unsupported claims", route: "/workspace", source: "library" },
@@ -59,8 +58,8 @@ export default function WorkflowMakerPage() {
   const [lanes, setLanes] = useState<LaneMap>({
     intake: [cloneStep(LIBRARY[0])],
     analysis: [cloneStep(LIBRARY[2]), cloneStep(LIBRARY[3])],
-    drafting: [cloneStep(LIBRARY[5])],
-    submission: [cloneStep(LIBRARY[6]), cloneStep(LIBRARY[7])],
+    drafting: [cloneStep(LIBRARY[4])],
+    submission: [cloneStep(LIBRARY[5]), cloneStep(LIBRARY[6])],
   });
 
   const mappedFields = parsedRfp?.fields.filter((field) => field.value) || [];
@@ -109,7 +108,7 @@ export default function WorkflowMakerPage() {
       "",
       "Inputs used:",
       `- RFP Parser fields: ${mappedFields.length}`,
-      `- Start tab client/context: ${store.context.client_name || "not set"}`,
+      `- Workspace client/context: ${store.context.client_name || "not set"}`,
       `- Evidence mode: ${store.quality.require_evidence ? "strict" : "flexible"}`,
       `- Workspace TOC sections: ${store.toc.length}`,
       "",
