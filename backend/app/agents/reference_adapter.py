@@ -59,12 +59,29 @@ def _reference_client_candidates(text: str) -> list[str]:
     return found
 
 
-def _apply_client_name_guardrail(text: str, req: AdaptSectionRequest) -> str:
+def _all_disallowed_client_names(req: AdaptSectionRequest, evidence_lines: list[str] | None = None) -> list[str]:
+    client_name = _clean(req.context.client_name)
+    sources = [req.reference_content]
+    if evidence_lines:
+        sources.extend(evidence_lines)
+    names: list[str] = []
+    for source in sources:
+        for candidate in _reference_client_candidates(source):
+            if candidate not in names:
+                names.append(candidate)
+    return [name for name in names if client_name and name.lower() != client_name.lower()]
+
+
+def _apply_client_name_guardrail(
+    text: str,
+    req: AdaptSectionRequest,
+    evidence_lines: list[str] | None = None,
+) -> str:
     client_name = _clean(req.context.client_name)
     if not client_name:
         return text.strip()
     guarded = text
-    for candidate in _reference_client_candidates(req.reference_content):
+    for candidate in _all_disallowed_client_names(req, evidence_lines):
         if candidate.lower() == client_name.lower():
             continue
         guarded = re.sub(re.escape(candidate), client_name, guarded, flags=re.IGNORECASE)
@@ -192,6 +209,9 @@ def _validate_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief) 
     client_name = _clean(req.context.client_name)
     if client_name and client_name.lower() not in lowered:
         notes.append("client name not present in adapted output")
+    leaked_names = _all_disallowed_client_names(req)
+    if any(name.lower() in lowered for name in leaked_names):
+        raise LLMError("adapted output still contains a reference client name")
     return notes
 
 
@@ -350,7 +370,7 @@ Rules:
     )
     if _needs_retry(content, effective_req):
         content = await _retry_adaptation(effective_req, brief, evidence_lines, content)
-    content = _apply_client_name_guardrail(content, effective_req)
+    content = _apply_client_name_guardrail(content, effective_req, evidence_lines)
     notes = _validate_output(content, effective_req, brief)
     section = SectionResult(
         title=req.section_title,
