@@ -92,6 +92,33 @@ _SECTION_ALIASES: dict[str, list[str]] = {
 }
 
 
+def _prompt_heading_terms(prompt: str, instruction: str) -> list[str]:
+    combined = " ".join(part for part in [prompt, instruction] if part).strip()
+    if not combined:
+        return []
+    terms: list[str] = []
+    patterns = [
+        r'rename\s+heading\s+"([^"]+)"\s+to\s+"([^"]+)"',
+        r"rename\s+heading\s+'([^']+)'\s+to\s+'([^']+)'",
+        r'rename\s+subheading\s+"([^"]+)"\s+to\s+"([^"]+)"',
+        r"rename\s+subheading\s+'([^']+)'\s+to\s+'([^']+)'",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, combined, flags=re.IGNORECASE):
+            terms.extend([match.group(1), match.group(2)])
+    module_patterns = [
+        r"\badd\s+(?:new\s+)?([A-Za-z][A-Za-z0-9&/ +_-]{1,40}?)\s+module\b",
+        r"\binclude\s+(?:new\s+)?([A-Za-z][A-Za-z0-9&/ +_-]{1,40}?)\s+module\b",
+        r"\bintroduce\s+(?:new\s+)?([A-Za-z][A-Za-z0-9&/ +_-]{1,40}?)\s+module\b",
+    ]
+    for pattern in module_patterns:
+        for match in re.finditer(pattern, combined, flags=re.IGNORECASE):
+            label = re.sub(r"^(the|a|an)\s+", "", match.group(1), flags=re.IGNORECASE).strip()
+            if label:
+                terms.extend([f"{label} module", f"{label} module scope", label])
+    return [term.strip() for term in terms if term.strip()]
+
+
 def _normalize_heading(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
 
@@ -128,11 +155,16 @@ def _section_alias_terms(section_title: str) -> list[str]:
     return aliases
 
 
-def _strict_section_filter(section_title: str, chunks: list[EvidenceChunk]) -> list[EvidenceChunk]:
+def _strict_section_filter(section_title: str, chunks: list[EvidenceChunk], prompt: str = "", instruction: str = "") -> list[EvidenceChunk]:
     aliases = _section_alias_terms(section_title)
-    if not aliases:
+    prompt_terms = _prompt_heading_terms(prompt, instruction)
+    if not aliases and not prompt_terms:
         return chunks
-    allowed = {_normalize_heading(section_title), *(_normalize_heading(alias) for alias in aliases)}
+    allowed = {
+        _normalize_heading(section_title),
+        *(_normalize_heading(alias) for alias in aliases),
+        *(_normalize_heading(term) for term in prompt_terms),
+    }
     matched: list[EvidenceChunk] = []
     for chunk in chunks:
         heading = _normalize_heading(chunk.source_section or "")
@@ -433,7 +465,7 @@ def retrieve_for_section(
 
     chunks = _filter_by_documents(chunks, selected_documents)
     chunks = _filter_context_mismatch(chunks, context, query)
-    chunks = _strict_section_filter(section_title, chunks)
+    chunks = _strict_section_filter(section_title, chunks, prompt=prompt, instruction=instruction)
 
     # Light re-rank: nudge chunks whose family matches.
     if proposal_family:

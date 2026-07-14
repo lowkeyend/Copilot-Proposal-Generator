@@ -56,7 +56,7 @@ const emptyContext: ClientContext = {
   client_name: "",
   industry: "",
   client_profile: "established",
-  canonical_product: ["Temenos Transact"],
+  canonical_product: [],
   selected_documents: [],
   intake: {
     project_mode: "implementation",
@@ -214,7 +214,7 @@ export const useProposalStore = create<ProposalState>()(
           ? canonicalProduct.filter((item: unknown) => typeof item === "string" && item.trim())
           : typeof canonicalProduct === "string" && canonicalProduct.trim()
             ? [canonicalProduct.trim()]
-            : [...emptyContext.canonical_product];
+            : [];
         return {
           ...persisted,
           model: normalizedModel,

@@ -313,3 +313,62 @@ def test_retrieval_uses_prompt_terms_for_module_specific_scope(monkeypatch) -> N
     assert "Forex" in fake.query_text
     assert chunks
     assert any("Forex module" in chunk.text for chunk in chunks)
+
+
+def test_prompt_heading_terms_survive_strict_scope_filter(monkeypatch) -> None:
+    class FakeQdrant:
+        def search_text(self, query_text: str, model: str, top_k: int = 6):
+            return []
+
+        def search(self, query_vector, top_k: int = 6, keywords=None):
+            return []
+
+        def scroll_payloads(self, limit: int = 5000):
+            return [
+                {
+                    "text": "The Forex module will be configured with pricing and related integrations.",
+                    "section": "Forex Module Scope",
+                    "source": "Forex Addendum.docx",
+                    "family": "Temenos",
+                    "document_name": "Forex Addendum.docx",
+                    "_point_id": "fx-2",
+                }
+            ]
+
+        @staticmethod
+        def normalize_payload(payload):
+            return {
+                "text": payload["text"],
+                "source": payload["source"],
+                "document": payload.get("document_name", ""),
+                "section": payload["section"],
+                "family": payload["family"],
+            }
+
+    fake_settings = SimpleNamespace(embedding_provider="qdrant", embedding_model="dummy")
+    fake_context = ClientContext(
+        client_name="QIB",
+        industry="Banking",
+        client_profile="established",
+        canonical_product="Temenos Transact",
+        selected_documents=["Forex Addendum.docx"],
+        intake=IntakeProfile(),
+    )
+
+    monkeypatch.setattr("app.agents.retrieval_agent.get_qdrant", lambda: FakeQdrant())
+    monkeypatch.setattr("app.agents.retrieval_agent.get_settings", lambda: fake_settings)
+
+    chunks = retrieve_for_section(
+        section_title="Scope of Work",
+        keywords=["scope"],
+        context=fake_context,
+        proposal_family="Temenos",
+        prompt='Add the Forex module to scope of work and rename heading "Upgrade Analysis" to "Forex Module Scope".',
+        instruction="",
+        top_k=4,
+        include_temenos_official=False,
+        use_hybrid_retrieval=True,
+    )
+
+    assert chunks
+    assert chunks[0].source_section == "Forex Module Scope"
