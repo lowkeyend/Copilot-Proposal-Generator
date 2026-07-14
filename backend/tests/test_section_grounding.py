@@ -427,3 +427,32 @@ def test_semantic_patch_blocks_can_rename_one_heading(monkeypatch) -> None:
     assert patched[0].text == "Proposed Solution"
     assert patched[1].text == "Forex Module Scope"
     assert "Forex module" in patched[2].text
+
+
+def test_patch_reference_blocks_applies_explicit_module_addition() -> None:
+    req = AdaptSectionRequest(
+        section_title="Scope of Work",
+        reference_content="",
+        reference_blocks=[
+            TemplateBlock(block_id="h1", kind="heading", section_title="Scope of Work", heading_level=2, text="Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ", order=0, editable=False),
+            TemplateBlock(block_id="p1", kind="paragraph", section_title="Scope of Work", text="SYS will execute a like-for-like technical upgrade of Alkuraimi Bank's Temenos Transact Core Banking platform from the current release to the latest agreed Temenos release.", order=1),
+            TemplateBlock(block_id="h2", kind="heading", section_title="Scope of Work", heading_level=3, text="Upgrade Analysis", order=2, editable=False),
+            TemplateBlock(block_id="l1", kind="list", section_title="Scope of Work", text="Inventory of existing modules, parameters, local developments, and integrations", items=["Inventory of existing modules, parameters, local developments, and integrations"], order=3),
+        ],
+        context=ClientContext(
+            client_name="QIB",
+            industry="Banking",
+            project_type="Implementation",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(current_version="R20", target_version="R24"),
+        ),
+        proposal_family="Temenos",
+        prompt='Prepare a proposal for QIB. Preserve the reference structure and wording style. Add the Forex module where supported by the selected documents. Rename heading "Upgrade Analysis" to "Forex Module Scope".',
+    )
+
+    patched = _patch_reference_blocks(req, ["[Forex Module] Add Forex module within the selected scope."])
+
+    assert patched[1].text.lower().find("forex module") != -1
+    assert patched[2].text == "Forex Module Scope"
+    assert any("Forex module" in item for item in patched[3].items)

@@ -241,6 +241,120 @@ def _allow_heading_edit(req: AdaptSectionRequest, heading_text: str) -> bool:
     return False
 
 
+def _extract_heading_renames(req: AdaptSectionRequest) -> dict[str, str]:
+    combined = _clean(f"{req.prompt or ''} {req.instruction or ''}")
+    renames: dict[str, str] = {}
+    patterns = [
+        r'rename\s+heading\s+"([^"]+)"\s+to\s+"([^"]+)"',
+        r"rename\s+heading\s+'([^']+)'\s+to\s+'([^']+)'",
+        r'rename\s+subheading\s+"([^"]+)"\s+to\s+"([^"]+)"',
+        r"rename\s+subheading\s+'([^']+)'\s+to\s+'([^']+)'",
+        r'change\s+heading\s+"([^"]+)"\s+to\s+"([^"]+)"',
+        r"change\s+heading\s+'([^']+)'\s+to\s+'([^']+)'",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, combined, flags=re.IGNORECASE):
+            renames[_clean(match.group(1)).lower()] = _clean(match.group(2))
+    return renames
+
+
+def _extract_requested_modules(req: AdaptSectionRequest) -> list[str]:
+    combined = _clean(f"{req.prompt or ''} {req.instruction or ''}")
+    modules: list[str] = []
+    patterns = [
+        r"\badd\s+(?:new\s+)?([A-Za-z][A-Za-z0-9&/ +_-]{1,40}?)\s+module\b",
+        r"\binclude\s+(?:new\s+)?([A-Za-z][A-Za-z0-9&/ +_-]{1,40}?)\s+module\b",
+        r"\bintroduce\s+(?:new\s+)?([A-Za-z][A-Za-z0-9&/ +_-]{1,40}?)\s+module\b",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, combined, flags=re.IGNORECASE):
+            label = _clean(re.sub(r"^(the|a|an)\s+", "", match.group(1), flags=re.IGNORECASE))
+            if label:
+                modules.append(f"{label} module")
+    return list(dict.fromkeys(modules))
+
+
+def _evidence_supports_phrase(phrase: str, evidence_lines: list[str]) -> bool:
+    target = _clean(phrase).lower()
+    if not target:
+        return False
+    return any(target in _clean(line).lower() for line in evidence_lines)
+
+
+def _apply_prompt_directives_to_block(
+    req: AdaptSectionRequest,
+    block: TemplateBlock,
+    evidence_lines: list[str],
+) -> TemplateBlock:
+    next_block = block.model_copy(deep=True)
+    renames = _extract_heading_renames(req)
+    requested_modules = [
+        module for module in _extract_requested_modules(req)
+        if _evidence_supports_phrase(module, evidence_lines) or _evidence_supports_phrase(module.replace(" module", ""), evidence_lines)
+    ]
+    if next_block.kind == "heading":
+        renamed = renames.get(_clean(next_block.text).lower())
+        if renamed:
+            next_block.text = renamed
+            if next_block.heading_level <= 1:
+                next_block.section_title = renamed
+        return next_block
+
+    if not requested_modules:
+        return next_block
+
+    module_phrase = requested_modules[0]
+    lower_title = _clean(req.section_title).lower()
+    if next_block.kind == "paragraph":
+        text = next_block.text or ""
+        if module_phrase.lower() not in text.lower():
+            if "executive summary" in lower_title:
+                text = re.sub(
+                    r"\blike-for-like technical upgrade\b",
+                    f"delivery of the {module_phrase}",
+                    text,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
+                if module_phrase.lower() not in text.lower():
+                    text = f"{text.rstrip('.')} with the addition of the {module_phrase}."
+            elif "scope of work" in lower_title:
+                text = re.sub(
+                    r"\blike-for-like technical upgrade\b",
+                    f"implementation of the {module_phrase}",
+                    text,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
+                if module_phrase.lower() not in text.lower():
+                    text = f"{text.rstrip('.')} including the {module_phrase}."
+            elif "solution" in lower_title:
+                text = f"{text.rstrip('.')} The proposed solution includes the {module_phrase}."
+            next_block.text = text
+    elif next_block.kind == "list":
+        items = next_block.items or [next_block.text] if next_block.text else []
+        if items and not any(module_phrase.lower() in item.lower() for item in items):
+            items = [*items, f"Include the {module_phrase} within the applicable scope and configuration."]
+            next_block.items = items
+            next_block.text = "\n".join(items)
+    return next_block
+
+
+def _blocks_equal(a: list[TemplateBlock], b: list[TemplateBlock]) -> bool:
+    if len(a) != len(b):
+        return False
+    for left, right in zip(a, b):
+        if left.kind != right.kind:
+            return False
+        if _clean(left.text) != _clean(right.text):
+            return False
+        if [_clean(item) for item in (left.items or [])] != [_clean(item) for item in (right.items or [])]:
+            return False
+        if [[_clean(cell) for cell in row] for row in (left.table_rows or [])] != [[_clean(cell) for cell in row] for row in (right.table_rows or [])]:
+            return False
+    return True
+
+
 def _deterministic_patch(req: AdaptSectionRequest, evidence_lines: list[str]) -> str:
     content = _prepare_reference_content(req)
     lines = content.splitlines()
@@ -287,6 +401,7 @@ def _patch_reference_blocks(req: AdaptSectionRequest, evidence_lines: list[str])
                     "section": _apply_client_name_guardrail(next_block.image.section or "", req, evidence_lines),
                 }
             )
+        next_block = _apply_prompt_directives_to_block(req, next_block, evidence_lines)
         patched_blocks.append(next_block)
     return patched_blocks
 
@@ -751,11 +866,14 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
 
     if _should_use_patch_only(effective_req):
         blocks = _patch_reference_blocks(effective_req, evidence_lines)
+        original_blocks = [block.model_copy(deep=True) for block in blocks]
         if _needs_semantic_block_patch(effective_req):
             try:
-                blocks = await _semantic_patch_blocks(effective_req, brief, evidence_lines, blocks)
+                semantic_blocks = await _semantic_patch_blocks(effective_req, brief, evidence_lines, blocks)
+                if not _blocks_equal(semantic_blocks, blocks):
+                    blocks = semantic_blocks
             except Exception:
-                pass
+                blocks = original_blocks
         content = _content_from_blocks(blocks) if blocks else _deterministic_patch(effective_req, evidence_lines)
         notes = _validate_output(content, effective_req, brief)
         section = SectionResult(
