@@ -7,7 +7,7 @@ from app.agents.section_writer import (
     _prune_unsupported_sentences,
     _validation_issues,
 )
-from app.agents.reference_adapter import _allow_heading_edit, _deterministic_patch, _effective_versions, _needs_semantic_block_patch, _patch_reference_blocks, _semantic_patch_blocks, _should_use_patch_only
+from app.agents.reference_adapter import _allow_heading_edit, _deterministic_patch, _effective_versions, _needs_semantic_block_patch, _patch_reference_blocks, _prompt_requests_upgrade_wording, _semantic_patch_blocks, _should_use_patch_only
 from app.models.schemas import AdaptSectionRequest, ClientContext, EvidenceChunk, GenerateSectionRequest, IntakeProfile, ProposalBrief, TemplateBlock
 
 
@@ -456,3 +456,52 @@ def test_patch_reference_blocks_applies_explicit_module_addition() -> None:
     assert patched[1].text.lower().find("forex module") != -1
     assert patched[2].text == "Forex Module Scope"
     assert any("Forex module" in item for item in patched[3].items)
+
+
+def test_module_only_prompt_disables_upgrade_wording() -> None:
+    req = AdaptSectionRequest(
+        section_title="Executive Summary",
+        reference_content="",
+        reference_blocks=[],
+        context=ClientContext(
+            client_name="QIB",
+            industry="Banking",
+            project_type="Implementation",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(current_version="R20", target_version="R24"),
+        ),
+        proposal_family="Temenos",
+        prompt="Prepare a proposal for QIB. Add the Forex module where supported by the selected documents. Preserve the reference structure and wording style.",
+    )
+
+    assert _prompt_requests_upgrade_wording(req) is False
+
+
+def test_module_only_scope_omits_upgrade_versions() -> None:
+    req = AdaptSectionRequest(
+        section_title="Scope of Work",
+        reference_content="",
+        reference_blocks=[
+            TemplateBlock(block_id="h1", kind="heading", section_title="Scope of Work", heading_level=2, text="Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ", order=0, editable=False),
+            TemplateBlock(block_id="p1", kind="paragraph", section_title="Scope of Work", text="SYS will execute a like-for-like technical upgrade of Alkuraimi Bank's Temenos Transact Core Banking platform from the current release to the latest agreed Temenos release.", order=1),
+        ],
+        context=ClientContext(
+            client_name="QIB",
+            industry="Banking",
+            project_type="Implementation",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(current_version="R20", target_version="R24"),
+        ),
+        proposal_family="Temenos",
+        prompt='Prepare a proposal for QIB. Add the Forex module where supported by the selected documents. Rename heading "Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ" to "Forex Module Scope". Preserve the reference structure and wording style.',
+    )
+
+    patched = _patch_reference_blocks(req, ["[Forex Module] Add Forex module within the selected scope."])
+
+    assert "R20" not in patched[0].text
+    assert "R24" not in patched[0].text
+    assert "Forex Module Scope" == patched[0].text
+    assert "technical upgrade" not in patched[1].text.lower()
+    assert "forex module" in patched[1].text.lower()

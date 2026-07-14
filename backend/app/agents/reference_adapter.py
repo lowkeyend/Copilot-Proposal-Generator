@@ -67,7 +67,36 @@ def _effective_versions(req: AdaptSectionRequest) -> tuple[str, str]:
     return _clean(req.context.intake.current_version), _clean(req.context.intake.target_version)
 
 
+def _prompt_requests_upgrade_wording(req: AdaptSectionRequest) -> bool:
+    combined = _clean(f"{req.prompt or ''} {req.instruction or ''}").lower()
+    if not combined:
+        return bool(_clean(req.context.intake.current_version) and _clean(req.context.intake.target_version))
+    explicit_upgrade = any(
+        phrase in combined
+        for phrase in (
+            "technical upgrade",
+            "upgrade from",
+            "upgrade path",
+            "r20 to",
+            "r21 to",
+            "r22 to",
+            "r23 to",
+            "r24 to",
+            "r25 to",
+            "r26 to",
+            "current version",
+            "target version",
+            "like-for-like upgrade",
+        )
+    )
+    requested_modules = _extract_requested_modules(req)
+    module_only = bool(requested_modules) and not explicit_upgrade
+    return not module_only
+
+
 def _apply_version_guardrail(text: str, req: AdaptSectionRequest) -> str:
+    if not _prompt_requests_upgrade_wording(req):
+        return text
     current_version, target_version = _effective_versions(req)
     if not current_version or not target_version or current_version == target_version:
         return text
@@ -298,6 +327,14 @@ def _apply_prompt_directives_to_block(
             next_block.text = renamed
             if next_block.heading_level <= 1:
                 next_block.section_title = renamed
+        if requested_modules and not _prompt_requests_upgrade_wording(req):
+            if re.search(r"\bcore upgrade\b", next_block.text, flags=re.IGNORECASE):
+                next_block.text = re.sub(
+                    r"\bCore Upgrade\b.*$",
+                    f"{requested_modules[0].replace(' module', '').title()} Module Scope",
+                    next_block.text,
+                    flags=re.IGNORECASE,
+                )
         return next_block
 
     if not requested_modules:
@@ -309,6 +346,8 @@ def _apply_prompt_directives_to_block(
         text = next_block.text or ""
         if module_phrase.lower() not in text.lower():
             if "executive summary" in lower_title:
+                text = re.sub(r"\bfrom\s+release\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b", "", text, flags=re.IGNORECASE)
+                text = re.sub(r"\bfrom\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b", "", text, flags=re.IGNORECASE)
                 text = re.sub(
                     r"\blike-for-like technical upgrade\b",
                     f"delivery of the {module_phrase}",
@@ -319,6 +358,8 @@ def _apply_prompt_directives_to_block(
                 if module_phrase.lower() not in text.lower():
                     text = f"{text.rstrip('.')} with the addition of the {module_phrase}."
             elif "scope of work" in lower_title:
+                text = re.sub(r"\bfrom\s+release\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b", "", text, flags=re.IGNORECASE)
+                text = re.sub(r"\bfrom\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b", "", text, flags=re.IGNORECASE)
                 text = re.sub(
                     r"\blike-for-like technical upgrade\b",
                     f"implementation of the {module_phrase}",
@@ -329,7 +370,13 @@ def _apply_prompt_directives_to_block(
                 if module_phrase.lower() not in text.lower():
                     text = f"{text.rstrip('.')} including the {module_phrase}."
             elif "solution" in lower_title:
+                text = re.sub(r"\bfrom\s+release\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b", "", text, flags=re.IGNORECASE)
+                text = re.sub(r"\bfrom\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b", "", text, flags=re.IGNORECASE)
+                text = re.sub(r"\blike-for-like technical upgrade\b", f"solution delivery for the {module_phrase}", text, count=1, flags=re.IGNORECASE)
                 text = f"{text.rstrip('.')} The proposed solution includes the {module_phrase}."
+            if not _prompt_requests_upgrade_wording(req):
+                text = re.sub(r"\bR\d+[A-Za-z0-9._-]*(?:\s+TAFJ)?\s+to\s+R\d+[A-Za-z0-9._-]*(?:\s+TAFJ)?\b", "", text, flags=re.IGNORECASE)
+                text = re.sub(r"\s{2,}", " ", text).strip(" .") + "."
             next_block.text = text
     elif next_block.kind == "list":
         items = next_block.items or [next_block.text] if next_block.text else []
