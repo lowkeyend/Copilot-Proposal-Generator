@@ -7,7 +7,7 @@ from app.agents.section_writer import (
     _prune_unsupported_sentences,
     _validation_issues,
 )
-from app.agents.reference_adapter import _deterministic_patch, _effective_versions, _needs_semantic_block_patch, _patch_reference_blocks, _semantic_patch_blocks, _should_use_patch_only
+from app.agents.reference_adapter import _allow_heading_edit, _deterministic_patch, _effective_versions, _needs_semantic_block_patch, _patch_reference_blocks, _semantic_patch_blocks, _should_use_patch_only
 from app.models.schemas import AdaptSectionRequest, ClientContext, EvidenceChunk, GenerateSectionRequest, IntakeProfile, ProposalBrief, TemplateBlock
 
 
@@ -360,3 +360,70 @@ def test_semantic_patch_blocks_applies_prompt(monkeypatch) -> None:
     assert "QIB" in patched[0].text
     assert "phased MVP" in patched[0].text
     assert patched[1].items == ["Phased MVP delivery", "Temenos Transact upgrade from R20 to R24"]
+
+
+def test_heading_edit_only_allowed_when_explicit() -> None:
+    req = AdaptSectionRequest(
+        section_title="Proposed Solution",
+        reference_content="",
+        reference_blocks=[],
+        context=ClientContext(
+            client_name="QIB",
+            industry="Banking",
+            project_type="Technical Upgrade",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(),
+        ),
+        proposal_family="Temenos",
+        prompt='Rename heading "Upgrade Analysis" to "Forex Module Scope" and preserve the reference structure.',
+    )
+
+    assert _allow_heading_edit(req, "Upgrade Analysis") is True
+    assert _allow_heading_edit(req, "Environment Readiness Assessment") is False
+
+
+def test_semantic_patch_blocks_can_rename_one_heading(monkeypatch) -> None:
+    class FakeLLM:
+        async def chat_json(self, *args, **kwargs):
+            return {
+                "patches": [
+                    {"block_id": "h2", "text": "Forex Module Scope"},
+                    {"block_id": "p1", "text": "The proposed solution includes the addition of a Forex module for QIB."},
+                ]
+            }
+
+    monkeypatch.setattr("app.agents.reference_adapter.get_llm", lambda: FakeLLM())
+
+    req = AdaptSectionRequest(
+        section_title="Proposed Solution",
+        reference_content="",
+        reference_blocks=[],
+        context=ClientContext(
+            client_name="QIB",
+            industry="Banking",
+            project_type="Implementation",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(),
+        ),
+        proposal_family="Temenos",
+        prompt='Rename heading "Upgrade Analysis" to "Forex Module Scope". Add a Forex module in the solution while preserving the reference structure and wording style.',
+    )
+    blocks = [
+        TemplateBlock(block_id="h1", kind="heading", section_title="Proposed Solution", heading_level=2, text="Proposed Solution", order=0, editable=False),
+        TemplateBlock(block_id="h2", kind="heading", section_title="Proposed Solution", heading_level=3, text="Upgrade Analysis", order=1, editable=False),
+        TemplateBlock(block_id="p1", kind="paragraph", section_title="Proposed Solution", text="Legacy solution text.", order=2),
+    ]
+    patched = asyncio.run(
+        _semantic_patch_blocks(
+            req,
+            ProposalBrief(must_change=["Rename Upgrade Analysis heading and add Forex module content."]),
+            ["[Forex Module] Add Forex module within the proposed solution scope."],
+            blocks,
+        )
+    )
+
+    assert patched[0].text == "Proposed Solution"
+    assert patched[1].text == "Forex Module Scope"
+    assert "Forex module" in patched[2].text

@@ -226,6 +226,21 @@ def _needs_semantic_block_patch(req: AdaptSectionRequest) -> bool:
     return any(marker in stripped for marker in generic_markers) or len(stripped.split()) >= 12
 
 
+def _allow_heading_edit(req: AdaptSectionRequest, heading_text: str) -> bool:
+    combined = _clean(f"{req.prompt or ''} {req.instruction or ''}").lower()
+    target = _clean(heading_text).lower()
+    if not combined or not target:
+        return False
+    if target in combined and any(
+        phrase in combined
+        for phrase in ("rename heading", "change heading", "rename section", "change section title", "rename subheading", "change subheading")
+    ):
+        return True
+    if any(phrase in combined for phrase in ("rename one heading", "change one heading only", "rename only this heading")):
+        return target in combined
+    return False
+
+
 def _deterministic_patch(req: AdaptSectionRequest, evidence_lines: list[str]) -> str:
     content = _prepare_reference_content(req)
     lines = content.splitlines()
@@ -314,7 +329,10 @@ async def _semantic_patch_blocks(
             "adaptation_hint": block.adaptation_hint,
         }
         for block in blocks
-        if block.kind in {"paragraph", "list", "table"} and block.editable
+        if (
+            (block.kind in {"paragraph", "list", "table"} and block.editable)
+            or (block.kind == "heading" and _allow_heading_edit(req, block.text or ""))
+        )
     ]
     if not editable_blocks:
         return blocks
@@ -358,6 +376,7 @@ EDITABLE BLOCKS
 Rules:
 - Preserve the same structure, order, and professional proposal style.
 - Do not rewrite headings or add/remove blocks.
+- Only rename a heading if the prompt explicitly asks for that exact heading to change.
 - Update only the editable block contents.
 - Apply the master prompt materially, not cosmetically.
 - Use only supported facts from the retrieved evidence or explicit client context.
@@ -382,7 +401,15 @@ Rules:
             patched_blocks.append(block)
             continue
         next_block = block.model_copy(deep=True)
-        if next_block.kind == "paragraph":
+        if next_block.kind == "heading":
+            next_text = str(patch.get("text", next_block.text or "")).strip() or next_block.text
+            next_block.text = _apply_version_guardrail(
+                _apply_client_name_guardrail(next_text, req, evidence_lines),
+                req,
+            )
+            if next_block.heading_level <= 1:
+                next_block.section_title = next_block.text
+        elif next_block.kind == "paragraph":
             next_block.text = _apply_version_guardrail(
                 _apply_client_name_guardrail(str(patch.get("text", next_block.text or "")), req, evidence_lines),
                 req,
