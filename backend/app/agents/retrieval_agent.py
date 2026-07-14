@@ -168,9 +168,28 @@ def _strict_section_filter(section_title: str, chunks: list[EvidenceChunk], prom
     matched: list[EvidenceChunk] = []
     for chunk in chunks:
         heading = _normalize_heading(chunk.source_section or "")
+        haystack = _normalize_heading(
+            " ".join(
+                [
+                    chunk.source_section or "",
+                    chunk.summary or "",
+                    chunk.source_document or "",
+                    chunk.source_proposal or "",
+                    (chunk.text or "")[:240],
+                ]
+            )
+        )
         if not heading:
-            continue
-        if any(item and (item in heading or heading in item) for item in allowed):
+            heading = haystack
+        if any(
+            item and (
+                item in heading
+                or heading in item
+                or item in haystack
+                or haystack in item
+            )
+            for item in allowed
+        ):
             matched.append(chunk)
     return matched or chunks
 
