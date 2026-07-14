@@ -805,6 +805,8 @@ def _section_contract(req: AdaptSectionRequest) -> str:
 - Summarize the engagement objective, the proposed capability or change, and the delivery intent only if supported.
 - Do not restate source commentary, chunk reasoning, or document analysis.
 - Do not use marketing phrases or inflated value statements.
+- Do not end with generic business-benefit claims such as efficiency improvement, transformation, optimization, or strengthened controls unless those exact outcomes are explicitly supported by the evidence and requested in the prompt.
+- Prefer a factual summary of the capability being implemented, the operational coverage, and the implementation intent.
 - Keep the prose polished and brief, with no unnecessary subheadings unless needed for clarity.
 """
     return """
