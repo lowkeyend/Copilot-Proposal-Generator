@@ -344,10 +344,13 @@ def _apply_prompt_directives_to_block(
     lower_title = _clean(req.section_title).lower()
     if next_block.kind == "paragraph":
         text = next_block.text or ""
+        if _clean(text).lower() == "the scope includes:":
+            return next_block
         if module_phrase.lower() not in text.lower():
             if "executive summary" in lower_title:
                 text = re.sub(r"\bfrom\s+release\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b", "", text, flags=re.IGNORECASE)
                 text = re.sub(r"\bfrom\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b", "", text, flags=re.IGNORECASE)
+                text = re.sub(r"\bfrom the current release to the latest agreed Temenos release\b", "", text, flags=re.IGNORECASE)
                 text = re.sub(
                     r"\blike-for-like technical upgrade\b",
                     f"delivery of the {module_phrase}",
@@ -360,6 +363,7 @@ def _apply_prompt_directives_to_block(
             elif "scope of work" in lower_title:
                 text = re.sub(r"\bfrom\s+release\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b", "", text, flags=re.IGNORECASE)
                 text = re.sub(r"\bfrom\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b", "", text, flags=re.IGNORECASE)
+                text = re.sub(r"\bfrom the current release to the latest agreed Temenos release\b", "", text, flags=re.IGNORECASE)
                 text = re.sub(
                     r"\blike-for-like technical upgrade\b",
                     f"implementation of the {module_phrase}",
@@ -372,11 +376,15 @@ def _apply_prompt_directives_to_block(
             elif "solution" in lower_title:
                 text = re.sub(r"\bfrom\s+release\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b", "", text, flags=re.IGNORECASE)
                 text = re.sub(r"\bfrom\s+[A-Za-z0-9._-]+\s+to\s+[A-Za-z0-9._-]+\b", "", text, flags=re.IGNORECASE)
+                text = re.sub(r"\bfrom the current release to the latest agreed Temenos release\b", "", text, flags=re.IGNORECASE)
                 text = re.sub(r"\blike-for-like technical upgrade\b", f"solution delivery for the {module_phrase}", text, count=1, flags=re.IGNORECASE)
                 text = f"{text.rstrip('.')} The proposed solution includes the {module_phrase}."
             if not _prompt_requests_upgrade_wording(req):
                 text = re.sub(r"\bR\d+[A-Za-z0-9._-]*(?:\s+TAFJ)?\s+to\s+R\d+[A-Za-z0-9._-]*(?:\s+TAFJ)?\b", "", text, flags=re.IGNORECASE)
-                text = re.sub(r"\s{2,}", " ", text).strip(" .") + "."
+                text = re.sub(r"\ba implementation\b", "the implementation", text, flags=re.IGNORECASE)
+                text = re.sub(r"\bof QIB's\b", "for QIB's", text, flags=re.IGNORECASE)
+                text = re.sub(r"\s{2,}", " ", text).strip(" .,:;")
+                text = text + "." if text else text
             next_block.text = text
     elif next_block.kind == "list":
         items = next_block.items or [next_block.text] if next_block.text else []
