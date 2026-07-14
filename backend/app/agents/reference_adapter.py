@@ -743,6 +743,77 @@ def _evidence_snapshot(evidence_lines: list[str], limit: int = 18) -> str:
     return chr(10).join(f"- {item}" for item in evidence_lines[:limit]) or "- none"
 
 
+def _section_kind(section_title: str) -> str:
+    title = _clean(section_title).lower()
+    if "scope" in title:
+        return "scope"
+    if "solution" in title:
+        return "solution"
+    if "executive summary" in title or "introduction" in title:
+        return "executive_summary"
+    return "generic"
+
+
+def _filtered_context_facts(req: AdaptSectionRequest, evidence_lines: list[str]) -> list[str]:
+    intake = req.context.intake
+    facts = [
+        f"Client name: {req.context.client_name}" if req.context.client_name else "",
+        f"Client profile: {req.context.client_profile}" if req.context.client_profile else "",
+        f"Project mode: {intake.project_mode}" if intake.project_mode else "",
+        f"Upgrade type: {intake.upgrade_type}" if intake.upgrade_type else "",
+        f"Current system: {intake.current_system}" if intake.current_system else "",
+        f"Current version: {intake.current_version}" if intake.current_version and _prompt_requests_upgrade_wording(req) else "",
+        f"Target version: {intake.target_version}" if intake.target_version and _prompt_requests_upgrade_wording(req) else "",
+        f"Selected documents: {', '.join(req.context.selected_documents)}" if req.context.selected_documents else "",
+    ]
+    combined = _clean(f"{req.prompt or ''} {req.instruction or ''}").lower()
+    evidence_text = " ".join(evidence_lines).lower()
+    allow_delivery = any(token in combined for token in ("tim", "methodology", "mvp", "phased", "big bang", "delivery model")) or any(
+        token in evidence_text for token in (" tim ", "methodology", "mvp", "phased", "big bang")
+    )
+    if allow_delivery:
+        facts.extend(
+            [
+                f"Delivery model: {intake.delivery_model}" if intake.delivery_model else "",
+                f"Implementation methodology: {intake.implementation_methodology}" if intake.implementation_methodology else "",
+            ]
+        )
+    return [item for item in facts if item]
+
+
+def _section_contract(req: AdaptSectionRequest) -> str:
+    kind = _section_kind(req.section_title)
+    if kind == "scope":
+        return """
+- Write a contractual scope section.
+- Focus on implementation activities, work packages, deliverables, controls, interfaces, testing scope, and deployment support.
+- Do not add business benefits, transformation claims, or sales language.
+- Do not add methodology, governance, phases, or timeline wording unless the prompt explicitly asks for it or the evidence directly supports it.
+- Use compact bullets where they improve clarity, but keep the language operational and submission-ready.
+"""
+    if kind == "solution":
+        return """
+- Write a proposed solution section.
+- Focus on the target functional capability, module behavior, operating coverage, interfaces, controls, and relevant configuration shape.
+- Explain what the solution will provide, not generic benefits.
+- Do not drift into scope management, commercial language, or governance content unless the evidence directly supports it.
+- Keep the tone factual, product-aware, and proposal-ready.
+"""
+    if kind == "executive_summary":
+        return """
+- Write an executive summary that is concise, client-specific, and grounded.
+- Summarize the engagement objective, the proposed capability or change, and the delivery intent only if supported.
+- Do not restate source commentary, chunk reasoning, or document analysis.
+- Do not use marketing phrases or inflated value statements.
+- Keep the prose polished and brief, with no unnecessary subheadings unless needed for clarity.
+"""
+    return """
+- Write a grounded proposal section using only the supported evidence and explicit client context.
+- Keep the tone factual and submission-ready.
+- Do not introduce unsupported benefits or generic consulting language.
+"""
+
+
 def _strip_redundant_section_title(text: str, section_title: str) -> str:
     lines = [line.rstrip() for line in (text or "").splitlines()]
     while lines:
@@ -762,6 +833,7 @@ async def _grounded_scope_rewrite(
     brief: ProposalBrief,
     evidence_lines: list[str],
 ) -> str:
+    context_facts = _filtered_context_facts(req, evidence_lines)
     prompt = f"""
 Write a submission-ready proposal section using only the retrieved evidence and explicit client context.
 
@@ -769,7 +841,7 @@ SECTION TITLE
 {req.section_title}
 
 CLIENT FACTS
-{chr(10).join(f"- {item}" for item in _context_facts(req)) or "- none"}
+{chr(10).join(f"- {item}" for item in context_facts) or "- none"}
 
 MASTER PROMPT
 {req.prompt or "(none)"}
@@ -803,6 +875,7 @@ Rules:
 - Do not output HTML or XML tags.
 - Do not invent benefits, governance, timelines, testing cycles, or technical steps that are not directly supported.
 - If the evidence supports module capabilities, implementation scope, interfaces, controls, deliverables, or operating coverage, use those facts directly in polished proposal language.
+{_section_contract(req)}
 
 Return final proposal content only.
 """
