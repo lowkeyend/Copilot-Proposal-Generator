@@ -891,6 +891,8 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
         keywords=_markdown_headings(prepared_reference) or req.reference_headings or [],
         context=req.context,
         proposal_family=req.proposal_family,
+        prompt=req.prompt,
+        instruction=req.instruction,
         top_k=req.top_k,
         include_temenos_official=req.include_temenos_official,
         use_hybrid_retrieval=req.use_hybrid_retrieval,

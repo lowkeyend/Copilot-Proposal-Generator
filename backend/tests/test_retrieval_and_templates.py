@@ -106,6 +106,8 @@ def test_selected_document_retrieval_stays_within_selected_docs(monkeypatch) -> 
         keywords=["version", "release"],
         context=fake_context,
         proposal_family="Temenos",
+        prompt="",
+        instruction="",
         top_k=4,
         include_temenos_official=False,
         use_hybrid_retrieval=True,
@@ -164,6 +166,8 @@ def test_selected_document_retrieval_matches_without_extension(monkeypatch) -> N
         keywords=["scope", "upgrade"],
         context=fake_context,
         proposal_family="Temenos",
+        prompt="",
+        instruction="",
         top_k=4,
         include_temenos_official=False,
         use_hybrid_retrieval=True,
@@ -237,6 +241,8 @@ def test_scope_retrieval_prefers_scope_headings(monkeypatch) -> None:
         keywords=["scope", "upgrade", "testing", "cutover"],
         context=fake_context,
         proposal_family="Temenos",
+        prompt="",
+        instruction="",
         top_k=6,
         include_temenos_official=False,
         use_hybrid_retrieval=True,
@@ -245,3 +251,65 @@ def test_scope_retrieval_prefers_scope_headings(monkeypatch) -> None:
     assert chunks
     assert all(chunk.source_section != "Proprietary Notice" for chunk in chunks)
     assert any(chunk.source_section == "Environment Readiness Assessment" for chunk in chunks)
+
+
+def test_retrieval_uses_prompt_terms_for_module_specific_scope(monkeypatch) -> None:
+    class FakeQdrant:
+        def search_text(self, query_text: str, model: str, top_k: int = 6):
+            self.query_text = query_text
+            return []
+
+        def search(self, query_vector, top_k: int = 6, keywords=None):
+            return []
+
+        def scroll_payloads(self, limit: int = 5000):
+            return [
+                {
+                    "text": "The Forex module will be configured with pricing, positions, and related integrations.",
+                    "section": "Forex Module Scope",
+                    "source": "Forex Addendum.docx",
+                    "family": "Temenos",
+                    "document_name": "Forex Addendum.docx",
+                    "_point_id": "fx-1",
+                }
+            ]
+
+        @staticmethod
+        def normalize_payload(payload):
+            return {
+                "text": payload["text"],
+                "source": payload["source"],
+                "document": payload.get("document_name", ""),
+                "section": payload["section"],
+                "family": payload["family"],
+            }
+
+    fake = FakeQdrant()
+    fake_settings = SimpleNamespace(embedding_provider="qdrant", embedding_model="dummy")
+    fake_context = ClientContext(
+        client_name="QIB",
+        industry="Banking",
+        client_profile="established",
+        canonical_product="Temenos Transact",
+        selected_documents=["Forex Addendum.docx"],
+        intake=IntakeProfile(),
+    )
+
+    monkeypatch.setattr("app.agents.retrieval_agent.get_qdrant", lambda: fake)
+    monkeypatch.setattr("app.agents.retrieval_agent.get_settings", lambda: fake_settings)
+
+    chunks = retrieve_for_section(
+        section_title="Scope of Work",
+        keywords=["scope", "module"],
+        context=fake_context,
+        proposal_family="Temenos",
+        prompt="Add the Forex module to scope of work.",
+        instruction="",
+        top_k=4,
+        include_temenos_official=False,
+        use_hybrid_retrieval=True,
+    )
+
+    assert "Forex" in fake.query_text
+    assert chunks
+    assert any("Forex module" in chunk.text for chunk in chunks)
