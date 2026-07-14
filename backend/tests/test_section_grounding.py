@@ -7,7 +7,7 @@ from app.agents.section_writer import (
     _prune_unsupported_sentences,
     _validation_issues,
 )
-from app.agents.reference_adapter import _allow_heading_edit, _deterministic_patch, _effective_versions, _needs_semantic_block_patch, _patch_reference_blocks, _prompt_requests_upgrade_wording, _semantic_patch_blocks, _should_use_patch_only
+from app.agents.reference_adapter import _allow_heading_edit, _deterministic_patch, _effective_versions, _is_major_scope_shift, _needs_semantic_block_patch, _patch_reference_blocks, _prompt_requests_upgrade_wording, _semantic_patch_blocks, _should_use_patch_only, adapt_section
 from app.models.schemas import AdaptSectionRequest, ClientContext, EvidenceChunk, GenerateSectionRequest, IntakeProfile, ProposalBrief, TemplateBlock
 
 
@@ -505,3 +505,98 @@ def test_module_only_scope_omits_upgrade_versions() -> None:
     assert "Forex Module Scope" == patched[0].text
     assert "technical upgrade" not in patched[1].text.lower()
     assert "forex module" in patched[1].text.lower()
+
+
+def test_module_prompt_triggers_major_scope_shift() -> None:
+    req = AdaptSectionRequest(
+        section_title="Scope of Work",
+        reference_content="## Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ",
+        reference_blocks=[],
+        context=ClientContext(
+            client_name="MMBL",
+            industry="Banking",
+            project_type="Implementation",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(),
+        ),
+        proposal_family="Temenos",
+        prompt="Prepare a proposal for MMBL and add the Forex module based on the selected documents.",
+    )
+
+    assert _is_major_scope_shift(req) is True
+
+
+def test_adapt_section_uses_grounded_rewrite_for_module_scope(monkeypatch) -> None:
+    class FakeLLM:
+        available = True
+
+        def resolve_model(self, model):
+            return model or "fake-model"
+
+        async def chat_json(self, *args, **kwargs):
+            return {
+                "summary": "Add Forex module scope for MMBL.",
+                "must_change": ["Replace upgrade scope with Forex module implementation scope."],
+                "must_preserve": ["Keep proposal tone factual and operational."],
+                "forbidden_claims": [],
+                "prompt_directives": ["Add Forex module scope."],
+            }
+
+        async def chat(self, *args, **kwargs):
+            return (
+                "MMBL requires implementation of the Temenos Treasury Forex capability to support deal capture, "
+                "lifecycle processing, and operational control for spot, forward, and swap transactions. "
+                "The scope covers product configuration, workflow setup, limit and control parameterization, "
+                "interface alignment with upstream and downstream systems, and deployment support for the agreed operating model.\n\n"
+                "The implementation activities include:\n"
+                "- configuration of Forex products, transaction events, and settlement rules;\n"
+                "- validation of interfaces, accounting entries, and operational controls;\n"
+                "- execution support for testing, cutover preparation, and controlled go-live."
+            )
+
+    monkeypatch.setattr("app.agents.reference_adapter.get_llm", lambda: FakeLLM())
+    monkeypatch.setattr(
+        "app.agents.reference_adapter.retrieve_for_section",
+        lambda **kwargs: [
+            EvidenceChunk(
+                text=(
+                    "Temenos Treasury Module's Forex component covers deal capture, processing, risk management, "
+                    "regulatory compliance, and support for spot, forward, and swap deals with automated defaults "
+                    "and lifecycle management."
+                ),
+                score=1.0,
+                summary="Forex component scope",
+                source_section="mmbl forex info",
+                source_document="mmbl forex info.txt",
+                source_proposal="mmbl forex info.txt",
+                proposal_family="Temenos",
+            )
+        ],
+    )
+
+    req = AdaptSectionRequest(
+        section_title="Scope of Work",
+        reference_content=(
+            "## Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ\n\n"
+            "SYS will execute a like-for-like technical upgrade of Alkuraimi Bank's Temenos Transact Core Banking platform."
+        ),
+        reference_blocks=[],
+        context=ClientContext(
+            client_name="MMBL",
+            industry="Banking",
+            project_type="Implementation",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(),
+        ),
+        proposal_family="Temenos",
+        prompt="Prepare a proposal for MMBL. Add the Forex module based on the selected documents.",
+    )
+
+    result = asyncio.run(adapt_section(req))
+
+    assert result.section.model.endswith(":grounded-rewrite")
+    assert "Forex capability" in result.section.content
+    assert "like-for-like technical upgrade" not in result.section.content.lower()
+    assert "Environment Readiness Assessment" not in result.section.content

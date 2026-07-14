@@ -50,6 +50,18 @@ _PATCH_TRIGGER_WORDS = (
     "completely rewrite",
 )
 
+_SCOPE_SHIFT_PHRASES = (
+    "add ",
+    "include ",
+    "introduce ",
+    "implement ",
+    "implementation of",
+    "module",
+    "treasury",
+    "forex",
+    "fx",
+)
+
 
 def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip())
@@ -253,6 +265,19 @@ def _needs_semantic_block_patch(req: AdaptSectionRequest) -> bool:
     )
     stripped = combined.lower()
     return any(marker in stripped for marker in generic_markers) or len(stripped.split()) >= 12
+
+
+def _is_major_scope_shift(req: AdaptSectionRequest) -> bool:
+    combined = _clean(f"{req.prompt or ''} {req.instruction or ''}").lower()
+    if not combined:
+        return False
+    if _extract_requested_modules(req) and not _prompt_requests_upgrade_wording(req):
+        return True
+    reference = _clean(req.reference_content).lower()
+    if "upgrade" in reference and any(phrase in combined for phrase in _SCOPE_SHIFT_PHRASES):
+        if "upgrade" not in combined and "like-for-like" not in combined:
+            return True
+    return False
 
 
 def _allow_heading_edit(req: AdaptSectionRequest, heading_text: str) -> bool:
@@ -694,6 +719,65 @@ def _context_facts(req: AdaptSectionRequest) -> list[str]:
     return [item for item in facts if item]
 
 
+def _evidence_snapshot(evidence_lines: list[str], limit: int = 18) -> str:
+    return chr(10).join(f"- {item}" for item in evidence_lines[:limit]) or "- none"
+
+
+async def _grounded_scope_rewrite(
+    req: AdaptSectionRequest,
+    brief: ProposalBrief,
+    evidence_lines: list[str],
+) -> str:
+    prompt = f"""
+Write a submission-ready proposal section using only the retrieved evidence and explicit client context.
+
+SECTION TITLE
+{req.section_title}
+
+CLIENT FACTS
+{chr(10).join(f"- {item}" for item in _context_facts(req)) or "- none"}
+
+MASTER PROMPT
+{req.prompt or "(none)"}
+
+SECTION INSTRUCTION
+{req.instruction or "(none)"}
+
+REFERENCE SECTION
+{req.reference_content}
+
+CHANGE PLAN
+{chr(10).join(f"- {item}" for item in brief.must_change[:12]) or "- Apply only explicit prompt changes."}
+
+SUPPORTED EVIDENCE
+{_evidence_snapshot(evidence_lines, 24)}
+
+Rules:
+- This is a fresh grounded rewrite, not a patch.
+- Use only facts that are explicitly supported in the SUPPORTED EVIDENCE block or explicit client context.
+- If the prompt requests a module implementation or scope addition, do not preserve upgrade-only headings such as Environment Readiness Assessment, Core Technical Upgrade, or Post Go-Live Support unless the evidence explicitly supports them for this section.
+- Do not mention release-to-release upgrade wording unless the prompt explicitly asks for an upgrade and the evidence supports it.
+- Do not mechanically repeat phrases like "including the Forex module" on every line.
+- Produce coherent proposal content that reads as an actual client submission, not commentary or notes.
+- Prefer a clear lead paragraph followed by concise scope bullets or subsection bullets only where they improve clarity.
+- Do not mention source documents, evidence, chunk names, or reasoning.
+- Do not output HTML or XML tags.
+- Do not invent benefits, governance, timelines, testing cycles, or technical steps that are not directly supported.
+- If the evidence supports module capabilities, implementation scope, interfaces, controls, deliverables, or operating coverage, use those facts directly in polished proposal language.
+
+Return final proposal content only.
+"""
+    return await get_llm().chat(
+        [
+            {"role": "system", "content": "You write grounded proposal sections from retrieved evidence only."},
+            {"role": "user", "content": prompt},
+        ],
+        model=req.model,
+        temperature=0.12,
+        max_tokens=2200,
+    )
+
+
 async def _build_brief(req: AdaptSectionRequest, evidence_lines: list[str]) -> ProposalBrief:
     llm = get_llm()
     client_name = _clean(req.context.client_name)
@@ -779,7 +863,7 @@ def _validate_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief) 
     if len(cleaned.split()) < 120:
         notes.append("output is shorter than the reference-style target")
     reference_headings = req.reference_headings or _markdown_headings(req.reference_content)
-    if reference_headings:
+    if reference_headings and not _is_major_scope_shift(req):
         present = sum(1 for heading in reference_headings if heading.lower() in lowered)
         if present < max(1, len(reference_headings) // 2):
             notes.append("output preserved fewer reference subheadings than expected")
@@ -920,6 +1004,25 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
     structure = _reference_structure(prepared_reference)
     plan = [AdaptationChange(kind="preserve", detail=item) for item in brief.must_preserve[:6]]
     plan.extend(AdaptationChange(kind="replace", detail=item) for item in brief.must_change[:8])
+
+    if _is_major_scope_shift(effective_req):
+        content = await _grounded_scope_rewrite(effective_req, brief, evidence_lines)
+        content = _sanitize_output(content, effective_req, brief, evidence_lines)
+        notes = _validate_output(content, effective_req, brief)
+        section = SectionResult(
+            title=req.section_title,
+            content=content.strip(),
+            blocks=_blocks_from_content(effective_req, content),
+            evidence=evidence,
+            locked=False,
+            model=f"{llm.resolve_model(req.model)}:grounded-rewrite",
+        )
+        return AdaptSectionResponse(
+            section=section,
+            brief=brief,
+            change_plan=plan,
+            validation_notes=notes,
+        )
 
     if _should_use_patch_only(effective_req):
         blocks = _patch_reference_blocks(effective_req, evidence_lines)
