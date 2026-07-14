@@ -743,6 +743,20 @@ def _evidence_snapshot(evidence_lines: list[str], limit: int = 18) -> str:
     return chr(10).join(f"- {item}" for item in evidence_lines[:limit]) or "- none"
 
 
+def _strip_redundant_section_title(text: str, section_title: str) -> str:
+    lines = [line.rstrip() for line in (text or "").splitlines()]
+    while lines:
+        first = _clean(re.sub(r"[*_#`]+", "", lines[0])).lower().rstrip(":")
+        target = _clean(section_title).lower().rstrip(":")
+        if first == target:
+            lines = lines[1:]
+            while lines and not lines[0].strip():
+                lines = lines[1:]
+            continue
+        break
+    return "\n".join(lines).strip()
+
+
 async def _grounded_scope_rewrite(
     req: AdaptSectionRequest,
     brief: ProposalBrief,
@@ -775,11 +789,16 @@ SUPPORTED EVIDENCE
 Rules:
 - This is a fresh grounded rewrite, not a patch.
 - Use only facts that are explicitly supported in the SUPPORTED EVIDENCE block or explicit client context.
+- Do not repeat the section title at the start of the answer.
 - If the prompt requests a module implementation or scope addition, do not preserve upgrade-only headings such as Environment Readiness Assessment, Core Technical Upgrade, or Post Go-Live Support unless the evidence explicitly supports them for this section.
 - Do not mention release-to-release upgrade wording unless the prompt explicitly asks for an upgrade and the evidence supports it.
 - Do not mechanically repeat phrases like "including the Forex module" on every line.
 - Produce coherent proposal content that reads as an actual client submission, not commentary or notes.
+- Write in operational proposal language, not marketing language.
+- Prefer concrete implementation activities, module capabilities, interfaces, controls, testing scope, deployment activities, and delivery responsibilities over benefit statements.
 - Prefer a clear lead paragraph followed by concise scope bullets or subsection bullets only where they improve clarity.
+- Do not add an exclusions paragraph unless the prompt explicitly asks for exclusions.
+- Do not state unsupported business benefits, transformation claims, or value claims.
 - Do not mention source documents, evidence, chunk names, or reasoning.
 - Do not output HTML or XML tags.
 - Do not invent benefits, governance, timelines, testing cycles, or technical steps that are not directly supported.
@@ -903,7 +922,10 @@ def _validate_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief) 
 
 
 def _sanitize_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief, evidence_lines: list[str]) -> str:
-    cleaned = _apply_client_name_guardrail(text, req, evidence_lines)
+    cleaned = _strip_redundant_section_title(
+        _apply_client_name_guardrail(text, req, evidence_lines),
+        req.section_title,
+    )
     reference_corpus = f"{req.reference_content}\n" + "\n".join(brief.must_change) + "\n".join(brief.must_preserve)
     reference_lower = reference_corpus.lower()
     sentences = re.split(r"(?<=[.!?])\s+", cleaned)
