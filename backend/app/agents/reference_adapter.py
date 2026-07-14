@@ -83,6 +83,16 @@ def _prompt_requests_upgrade_wording(req: AdaptSectionRequest) -> bool:
     combined = _clean(f"{req.prompt or ''} {req.instruction or ''}").lower()
     if not combined:
         return bool(_clean(req.context.intake.current_version) and _clean(req.context.intake.target_version))
+    negative_upgrade_patterns = (
+        r"\bdo not frame (?:this|it) as (?:a |an )?technical upgrade\b",
+        r"\bnot (?:a |an )?technical upgrade\b",
+        r"\bwithout upgrade wording\b",
+        r"\bdo not use upgrade wording\b",
+        r"\bnot an upgrade\b",
+        r"\bno upgrade\b",
+    )
+    if any(re.search(pattern, combined, flags=re.IGNORECASE) for pattern in negative_upgrade_patterns):
+        return False
     explicit_upgrade = any(
         phrase in combined
         for phrase in (
@@ -271,6 +281,16 @@ def _is_major_scope_shift(req: AdaptSectionRequest) -> bool:
     combined = _clean(f"{req.prompt or ''} {req.instruction or ''}").lower()
     if not combined:
         return False
+    if any(
+        re.search(pattern, combined, flags=re.IGNORECASE)
+        for pattern in (
+            r"\bdo not frame (?:this|it) as (?:a |an )?technical upgrade\b",
+            r"\bnot (?:a |an )?technical upgrade\b",
+            r"\bdo not use upgrade wording\b",
+            r"\bwithout upgrade wording\b",
+        )
+    ):
+        return True
     if _extract_requested_modules(req) and not _prompt_requests_upgrade_wording(req):
         return True
     reference = _clean(req.reference_content).lower()
