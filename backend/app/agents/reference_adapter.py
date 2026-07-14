@@ -212,6 +212,20 @@ def _should_use_patch_only(req: AdaptSectionRequest) -> bool:
     return not any(word in combined for word in _PATCH_TRIGGER_WORDS)
 
 
+def _needs_semantic_block_patch(req: AdaptSectionRequest) -> bool:
+    combined = _clean(f"{req.prompt or ''} {req.instruction or ''}")
+    if not combined:
+        return False
+    generic_markers = (
+        "preserve the reference structure",
+        "preserve the reference structure and wording style",
+        "keep company profile unchanged",
+        "replace all reference client names",
+    )
+    stripped = combined.lower()
+    return any(marker in stripped for marker in generic_markers) or len(stripped.split()) >= 12
+
+
 def _deterministic_patch(req: AdaptSectionRequest, evidence_lines: list[str]) -> str:
     content = _prepare_reference_content(req)
     lines = content.splitlines()
@@ -280,6 +294,122 @@ def _content_from_blocks(blocks: list[TemplateBlock]) -> str:
             if block.table_rows:
                 lines.append("")
     return "\n".join(lines).strip()
+
+
+async def _semantic_patch_blocks(
+    req: AdaptSectionRequest,
+    brief: ProposalBrief,
+    evidence_lines: list[str],
+    blocks: list[TemplateBlock],
+) -> list[TemplateBlock]:
+    editable_blocks = [
+        {
+            "block_id": block.block_id,
+            "kind": block.kind,
+            "heading_level": block.heading_level,
+            "text": block.text,
+            "items": block.items,
+            "table_rows": block.table_rows,
+            "editable": block.editable,
+            "adaptation_hint": block.adaptation_hint,
+        }
+        for block in blocks
+        if block.kind in {"paragraph", "list", "table"} and block.editable
+    ]
+    if not editable_blocks:
+        return blocks
+
+    prompt = f"""
+Return strict JSON only with this shape:
+{{
+  "patches": [
+    {{
+      "block_id": "string",
+      "text": "string",
+      "items": ["string"],
+      "table_rows": [["string"]]
+    }}
+  ]
+}}
+
+You are conservatively adapting a proposal section while preserving the original template style and structure.
+
+SECTION TITLE
+{req.section_title}
+
+MASTER PROMPT
+{req.prompt or "(none)"}
+
+SECTION INSTRUCTION
+{req.instruction or "(none)"}
+
+CLIENT FACTS
+{chr(10).join(f"- {item}" for item in _context_facts(req)) or "- none"}
+
+CHANGE PLAN
+{chr(10).join(f"- {item}" for item in brief.must_change[:12]) or "- Apply only prompt-required changes."}
+
+RETRIEVED SUPPORTING FACTS
+{chr(10).join(f"- {item}" for item in evidence_lines[:18]) or "- none"}
+
+EDITABLE BLOCKS
+{editable_blocks}
+
+Rules:
+- Preserve the same structure, order, and professional proposal style.
+- Do not rewrite headings or add/remove blocks.
+- Update only the editable block contents.
+- Apply the master prompt materially, not cosmetically.
+- Use only supported facts from the retrieved evidence or explicit client context.
+- Keep wording concise, proposal-grade, and structurally aligned to the template.
+- If a block should remain unchanged, return its original content.
+"""
+    data = await get_llm().chat_json(
+        [
+            {"role": "system", "content": "You return strict JSON patches for proposal blocks only."},
+            {"role": "user", "content": prompt},
+        ],
+        model=req.model,
+        temperature=0.1,
+        max_tokens=2200,
+    )
+    patches = data.get("patches", []) if isinstance(data, dict) else []
+    by_id = {str(item.get("block_id", "")).strip(): item for item in patches if str(item.get("block_id", "")).strip()}
+    patched_blocks: list[TemplateBlock] = []
+    for block in blocks:
+        patch = by_id.get(block.block_id)
+        if not patch:
+            patched_blocks.append(block)
+            continue
+        next_block = block.model_copy(deep=True)
+        if next_block.kind == "paragraph":
+            next_block.text = _apply_version_guardrail(
+                _apply_client_name_guardrail(str(patch.get("text", next_block.text or "")), req, evidence_lines),
+                req,
+            )
+        elif next_block.kind == "list":
+            raw_items = patch.get("items")
+            if not isinstance(raw_items, list) or not raw_items:
+                raw_items = [patch.get("text", next_block.text or "")]
+            next_block.items = [
+                _apply_version_guardrail(_apply_client_name_guardrail(str(item), req, evidence_lines), req)
+                for item in raw_items
+                if str(item).strip()
+            ]
+            next_block.text = "\n".join(next_block.items)
+        elif next_block.kind == "table":
+            rows = patch.get("table_rows")
+            if isinstance(rows, list) and rows:
+                next_block.table_rows = [
+                    [
+                        _apply_version_guardrail(_apply_client_name_guardrail(str(cell), req, evidence_lines), req)
+                        for cell in row
+                    ]
+                    for row in rows
+                    if isinstance(row, list)
+                ]
+        patched_blocks.append(next_block)
+    return patched_blocks
 
 
 def _blocks_from_content(req: AdaptSectionRequest, content: str) -> list[TemplateBlock]:
@@ -594,6 +724,11 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
 
     if _should_use_patch_only(effective_req):
         blocks = _patch_reference_blocks(effective_req, evidence_lines)
+        if _needs_semantic_block_patch(effective_req):
+            try:
+                blocks = await _semantic_patch_blocks(effective_req, brief, evidence_lines, blocks)
+            except Exception:
+                pass
         content = _content_from_blocks(blocks) if blocks else _deterministic_patch(effective_req, evidence_lines)
         notes = _validate_output(content, effective_req, brief)
         section = SectionResult(

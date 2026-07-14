@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 
 from app.agents.section_writer import (
     _clean_model_output,
@@ -6,8 +7,8 @@ from app.agents.section_writer import (
     _prune_unsupported_sentences,
     _validation_issues,
 )
-from app.agents.reference_adapter import _deterministic_patch, _effective_versions, _patch_reference_blocks, _should_use_patch_only
-from app.models.schemas import AdaptSectionRequest, ClientContext, EvidenceChunk, GenerateSectionRequest, IntakeProfile, TemplateBlock
+from app.agents.reference_adapter import _deterministic_patch, _effective_versions, _needs_semantic_block_patch, _patch_reference_blocks, _semantic_patch_blocks, _should_use_patch_only
+from app.models.schemas import AdaptSectionRequest, ClientContext, EvidenceChunk, GenerateSectionRequest, IntakeProfile, ProposalBrief, TemplateBlock
 
 
 def _request() -> GenerateSectionRequest:
@@ -294,3 +295,68 @@ def test_preserve_structure_prompt_stays_in_patch_mode() -> None:
     )
 
     assert _should_use_patch_only(req) is True
+
+
+def test_master_prompt_triggers_semantic_patch() -> None:
+    req = AdaptSectionRequest(
+        section_title="Executive Summary",
+        reference_content="",
+        reference_blocks=[],
+        context=ClientContext(
+            client_name="QIB",
+            industry="Banking",
+            project_type="Technical Upgrade",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(current_version="R20", target_version="R24"),
+        ),
+        proposal_family="Temenos",
+        prompt="Prepare a technical upgrade proposal for QIB, emphasize phased MVP delivery, and reflect the selected documents while preserving the reference structure and wording style.",
+    )
+
+    assert _needs_semantic_block_patch(req) is True
+
+
+def test_semantic_patch_blocks_applies_prompt(monkeypatch) -> None:
+    class FakeLLM:
+        async def chat_json(self, *args, **kwargs):
+            return {
+                "patches": [
+                    {"block_id": "p1", "text": "Systems Limited is pleased to submit this proposal for QIB, delivered through a phased MVP approach."},
+                    {"block_id": "l1", "items": ["Phased MVP delivery", "Temenos Transact upgrade from R20 to R24"]},
+                ]
+            }
+
+    monkeypatch.setattr("app.agents.reference_adapter.get_llm", lambda: FakeLLM())
+
+    req = AdaptSectionRequest(
+        section_title="Executive Summary",
+        reference_content="",
+        reference_blocks=[],
+        context=ClientContext(
+            client_name="QIB",
+            industry="Banking",
+            project_type="Technical Upgrade",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(current_version="R20", target_version="R24"),
+        ),
+        proposal_family="Temenos",
+        prompt="Prepare a technical upgrade proposal for QIB, emphasize phased MVP delivery, and preserve the reference structure and wording style.",
+    )
+    blocks = [
+        TemplateBlock(block_id="p1", kind="paragraph", section_title="Executive Summary", text="Systems Limited is pleased to submit this proposal.", order=0),
+        TemplateBlock(block_id="l1", kind="list", section_title="Executive Summary", text="Legacy bullet", items=["Legacy bullet"], order=1),
+    ]
+    patched = asyncio.run(
+        _semantic_patch_blocks(
+            req,
+            ProposalBrief(must_change=["Apply phased MVP delivery wording."]),
+            ["[Executive Summary] phased MVP delivery is requested"],
+            blocks,
+        )
+    )
+
+    assert "QIB" in patched[0].text
+    assert "phased MVP" in patched[0].text
+    assert patched[1].items == ["Phased MVP delivery", "Temenos Transact upgrade from R20 to R24"]
