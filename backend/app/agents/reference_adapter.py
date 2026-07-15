@@ -68,6 +68,34 @@ _SCOPE_SHIFT_PHRASES = (
     "fx",
 )
 
+_SECTION_FORBIDDEN_PHRASES = {
+    "scope": (
+        "stakeholder alignment",
+        "project governance",
+        "communication protocols",
+        "data migration",
+        "post-deployment stabilization",
+        "regulatory compliance",
+        "streamlined",
+    ),
+    "solution": (
+        "stakeholder alignment",
+        "project governance",
+        "data migration",
+        "fully automated",
+        "streamlined",
+    ),
+    "executive_summary": (
+        "stakeholder alignment",
+        "project governance",
+        "data migration",
+        "fully automated",
+        "streamlined",
+        "transformation",
+        "optimization",
+    ),
+}
+
 
 def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip())
@@ -824,6 +852,11 @@ def _grounding_evidence_terms_for_adaptation(evidence_lines: list[str]) -> set[s
     return terms
 
 
+def _evidence_supports_term(term: str, evidence_lines: list[str]) -> bool:
+    needle = _clean(term).lower()
+    return any(needle in _clean(line).lower() for line in evidence_lines)
+
+
 def _prune_unsupported_adaptation_sentences(
     content: str,
     req: AdaptSectionRequest,
@@ -831,22 +864,37 @@ def _prune_unsupported_adaptation_sentences(
 ) -> str:
     evidence_terms = _grounding_evidence_terms_for_adaptation(evidence_lines)
     context_terms = _grounding_context_terms_for_adaptation(req)
+    forbidden = _SECTION_FORBIDDEN_PHRASES.get(_section_kind(req.section_title), ())
     paragraphs = [part.strip() for part in re.split(r"\n{2,}", content or "") if part.strip()]
     kept_paragraphs: list[str] = []
     for paragraph in paragraphs:
+        units: list[str]
         if paragraph.lstrip().startswith(("#", "-", "*")):
-            kept_paragraphs.append(paragraph)
-            continue
-        kept_sentences: list[str] = []
-        for sentence in _split_sentences(paragraph):
+            units = [line.strip() for line in paragraph.splitlines() if line.strip()]
+        else:
+            units = _split_sentences(paragraph)
+        kept_units: list[str] = []
+        for sentence in units:
+            low = sentence.lower()
+            if any(phrase in low and not _evidence_supports_term(phrase, evidence_lines) for phrase in forbidden):
+                continue
             sentence_terms = _support_terms(sentence)
             evidence_overlap = len(sentence_terms & evidence_terms)
             context_overlap = len(sentence_terms & context_terms)
             if len(sentence_terms) < 4 or evidence_overlap + context_overlap >= 2:
-                kept_sentences.append(sentence)
-        if kept_sentences:
-            kept_paragraphs.append(" ".join(kept_sentences))
+                kept_units.append(sentence)
+        if kept_units:
+            kept_paragraphs.append("\n".join(kept_units) if paragraph.lstrip().startswith(("#", "-", "*")) else " ".join(kept_units))
     return "\n\n".join(kept_paragraphs).strip()
+
+
+def _normalize_section_format(text: str) -> str:
+    formatted = text.replace(" **", "\n\n**")
+    formatted = re.sub(r"\s+-\s+\*\*", r"\n- **", formatted)
+    formatted = re.sub(r"\.\s+(\d+\.\s+\*\*)", r".\n\n\1", formatted)
+    formatted = re.sub(r"\s+([*-])\s+", r"\n\1 ", formatted)
+    formatted = re.sub(r"\n{3,}", "\n\n", formatted)
+    return formatted.strip()
 
 
 def _section_contract(req: AdaptSectionRequest) -> str:
@@ -1084,7 +1132,8 @@ def _sanitize_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief, 
         if not blocked:
             kept.append(sentence)
     grounded = _clean(" ".join(kept) or cleaned)
-    return _prune_unsupported_adaptation_sentences(grounded, req, evidence_lines)
+    grounded = _prune_unsupported_adaptation_sentences(grounded, req, evidence_lines)
+    return _normalize_section_format(grounded)
 
 
 def _looks_like_meta_output(text: str) -> bool:
