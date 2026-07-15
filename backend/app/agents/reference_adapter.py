@@ -351,6 +351,21 @@ def _is_major_scope_shift(req: AdaptSectionRequest) -> bool:
     return False
 
 
+def _reference_is_placeholder(req: AdaptSectionRequest) -> bool:
+    text = _clean(req.reference_content).lower()
+    if not text:
+        return True
+    placeholder_markers = (
+        "legacy summary text",
+        "legacy scope text",
+        "legacy solution text",
+        "legacy text",
+    )
+    if any(marker in text for marker in placeholder_markers):
+        return True
+    return len(text.split()) < 20
+
+
 def _allow_heading_edit(req: AdaptSectionRequest, heading_text: str) -> bool:
     combined = _clean(f"{req.prompt or ''} {req.instruction or ''}").lower()
     target = _clean(heading_text).lower()
@@ -1279,7 +1294,7 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
     plan = [AdaptationChange(kind="preserve", detail=item) for item in brief.must_preserve[:6]]
     plan.extend(AdaptationChange(kind="replace", detail=item) for item in brief.must_change[:8])
 
-    if _is_major_scope_shift(effective_req):
+    if _is_major_scope_shift(effective_req) or _reference_is_placeholder(effective_req):
         content = await _grounded_scope_rewrite(effective_req, brief, evidence_lines)
         if _looks_like_meta_output(content):
             content = await _retry_adaptation(effective_req, brief, evidence_lines, content)
