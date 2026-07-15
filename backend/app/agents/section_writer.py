@@ -931,6 +931,7 @@ the section body. Match a formal proposal style:
   percentages unless those exact details appear in the evidence;
 - avoid generic marketing language, benefits language, and vague claims;
 - do not rewrite procedural source material into advisory or consulting prose.
+- when writing a module-implementation scope section, use bold markdown subheadings and grouped bullets instead of one dense paragraph.
 - do not emit HTML or XML tags such as ul, li, p, div, or span.
 
 Target {length} of well-structured content. Treat the lower bound as the
@@ -1602,12 +1603,19 @@ async def _repair_via_llm(
                     f"CLIENT PROFILE: {req.context.client_profile or 'established'}\n\n"
                     "EVIDENCE FACTS (the only facts you may use)\n"
                     f"{_format_evidence_facts(evidence, req)}\n\n"
+                    "SECTION STYLE REQUIREMENTS\n"
+                    f"{_section_style_guide(req)}\n\n"
+                    "SECTION BOUNDARY RULES\n"
+                    f"{_section_boundary_rules(req)}\n\n"
+                    "REFERENCE SECTION SCHEMA\n"
+                    f"{_reference_section_schema(req)}\n\n"
                     "DRAFT TO REWRITE\n"
                     f"{draft}\n\n"
                     "PROBLEMS TO FIX\n"
                     f"{issue_list}\n\n"
                     "Return only the corrected final section body inside <section> tags.\n"
-                    "Do not introduce any new facts, examples, products, dates, or claims."
+                    "Do not introduce any new facts, examples, products, dates, or claims.\n"
+                    "If this is a module-implementation scope section, return a lead paragraph followed by bold markdown subheadings and grouped bullets."
                 ),
             },
         ],
@@ -1635,6 +1643,10 @@ async def _expand_via_llm(
                     "controls, deliverables, and acceptance framing only where the evidence facts support them.\n\n"
                     "Do not add commentary, source references, or reasoning. Return only the final "
                     "section body inside <section> tags.\n\n"
+                    "SECTION STYLE REQUIREMENTS\n"
+                    f"{_section_style_guide(req)}\n\n"
+                    "REFERENCE SECTION SCHEMA\n"
+                    f"{_reference_section_schema(req)}\n\n"
                     "EVIDENCE FACTS (the only facts you may use)\n"
                     f"{_format_evidence_facts(evidence, req)}\n\n"
                     f"DRAFT\n{draft}"
