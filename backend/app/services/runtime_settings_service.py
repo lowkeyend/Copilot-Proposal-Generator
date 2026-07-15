@@ -91,10 +91,10 @@ def get_gemini_api_key() -> str:
 
 
 def get_grok_api_key() -> str:
-    runtime = load_runtime_settings().get("grok_api_key", "").strip()
+    runtime = load_runtime_settings().get("grok_api_key", "").strip() or load_runtime_settings().get("groq_api_key", "").strip()
     if runtime:
         return runtime
-    return get_settings().grok_api_key.strip()
+    return get_settings().groq_api_key.strip() or get_settings().grok_api_key.strip()
 
 
 def get_openrouter_config_status() -> dict[str, str | bool]:

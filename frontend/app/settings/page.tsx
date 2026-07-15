@@ -23,7 +23,7 @@ export default function SettingsPage() {
   } | null>(null);
   const [openrouterKey, setOpenrouterKey] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
-  const [grokKey, setGrokKey] = useState("");
+  const [groqKey, setGroqKey] = useState("");
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string>("");
@@ -34,7 +34,7 @@ export default function SettingsPage() {
     if (typeof window !== "undefined") {
       setOpenrouterKey(window.localStorage.getItem("proposal-copilot-openrouter-key") || "");
       setGeminiKey(window.localStorage.getItem("proposal-copilot-gemini-key") || "");
-      setGrokKey(window.localStorage.getItem("proposal-copilot-grok-key") || "");
+      setGroqKey(window.localStorage.getItem("proposal-copilot-groq-key") || window.localStorage.getItem("proposal-copilot-grok-key") || "");
     }
     api.models().then((m) => {
       setModels(m.models);
@@ -54,19 +54,24 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function persistKeys(nextOpenRouter: string, nextGemini: string, nextGrok: string) {
+  async function persistKeys(nextOpenRouter: string, nextGemini: string, nextGroq: string) {
     const payload = {
       api_key: nextOpenRouter.trim(),
       gemini_api_key: nextGemini.trim(),
-      grok_api_key: nextGrok.trim(),
+      grok_api_key: nextGroq.trim(),
     };
     if (typeof window !== "undefined") {
       if (payload.api_key) window.localStorage.setItem("proposal-copilot-openrouter-key", payload.api_key);
       else window.localStorage.removeItem("proposal-copilot-openrouter-key");
       if (payload.gemini_api_key) window.localStorage.setItem("proposal-copilot-gemini-key", payload.gemini_api_key);
       else window.localStorage.removeItem("proposal-copilot-gemini-key");
-      if (payload.grok_api_key) window.localStorage.setItem("proposal-copilot-grok-key", payload.grok_api_key);
-      else window.localStorage.removeItem("proposal-copilot-grok-key");
+      if (payload.grok_api_key) {
+        window.localStorage.setItem("proposal-copilot-groq-key", payload.grok_api_key);
+        window.localStorage.setItem("proposal-copilot-grok-key", payload.grok_api_key);
+      } else {
+        window.localStorage.removeItem("proposal-copilot-groq-key");
+        window.localStorage.removeItem("proposal-copilot-grok-key");
+      }
     }
     return api.saveOpenRouterSettings(payload);
   }
@@ -75,14 +80,14 @@ export default function SettingsPage() {
     setSaving(true);
     setError("");
     try {
-      const updated = await persistKeys(openrouterKey, geminiKey, grokKey);
+      const updated = await persistKeys(openrouterKey, geminiKey, groqKey);
       setStatus(updated);
       setMessage("LLM keys saved.");
       setDetail(
         [
           `OpenRouter: ${updated.api_key_set ? "saved" : "empty"}.`,
           `Gemini: ${updated.gemini_api_key_set ? "saved" : "empty"}.`,
-          `Grok: ${updated.grok_api_key_set ? "saved" : "empty"}.`,
+          `Groq: ${updated.grok_api_key_set ? "saved" : "empty"}.`,
           `Source: ${updated.source}. Default model: ${updated.default_model}.`,
         ].join(" ")
       );
@@ -106,7 +111,7 @@ export default function SettingsPage() {
       setStatus({
         api_key_set: result.ok,
         gemini_api_key_set: Boolean(geminiKey.trim()),
-        grok_api_key_set: Boolean(grokKey.trim()),
+        grok_api_key_set: Boolean(groqKey.trim()),
         source: result.source === "request" ? "runtime" : result.source,
         default_model: result.model || "openrouter/free",
         models: models.length ? models : [result.model].filter(Boolean),
@@ -123,7 +128,7 @@ export default function SettingsPage() {
     setChecking(true);
     setError("");
     try {
-      const updated = await persistKeys(openrouterKey, geminiKey, grokKey);
+      const updated = await persistKeys(openrouterKey, geminiKey, groqKey);
       setStatus(updated);
       const result = await api.checkOpenRouterSettings({ api_key: openrouterKey.trim(), model: store.model });
       setMessage(result.ok ? result.message : result.message || "OpenRouter check failed.");
@@ -131,7 +136,7 @@ export default function SettingsPage() {
       setStatus({
         api_key_set: result.ok,
         gemini_api_key_set: Boolean(geminiKey.trim()),
-        grok_api_key_set: Boolean(grokKey.trim()),
+        grok_api_key_set: Boolean(groqKey.trim()),
         source: updated.source,
         default_model: updated.default_model,
         models: updated.models.length ? updated.models : models,
@@ -154,7 +159,7 @@ export default function SettingsPage() {
           <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
             Configure provider keys once and reuse them for generation, docs queries, RFP parsing,
-            and planner flows. OpenRouter is checked for live generation today; Gemini and Grok are
+            and planner flows. OpenRouter is checked for live generation today; Gemini and Groq are
             stored alongside it for use in the same workspace.
           </p>
         </div>
@@ -207,12 +212,12 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Grok API Key</Label>
+                  <Label>Groq API Key</Label>
                   <Input
                     type="password"
-                    value={grokKey}
-                    onChange={(e) => setGrokKey(e.target.value)}
-                    placeholder="Grok key"
+                    value={groqKey}
+                    onChange={(e) => setGroqKey(e.target.value)}
+                    placeholder="Groq key"
                   />
                 </div>
               </div>
@@ -242,7 +247,7 @@ export default function SettingsPage() {
                 onClick={() => {
                   setOpenrouterKey("");
                   setGeminiKey("");
-                  setGrokKey("");
+                  setGroqKey("");
                   void (async () => {
                     await persistKeys("", "", "");
                     await handleCheck("");
@@ -269,7 +274,7 @@ export default function SettingsPage() {
             <div className="grid gap-3 md:grid-cols-3">
               <KeyStatus label="OpenRouter" active={Boolean(status?.api_key_set)} />
               <KeyStatus label="Gemini" active={Boolean(status?.gemini_api_key_set)} />
-              <KeyStatus label="Grok" active={Boolean(status?.grok_api_key_set)} />
+              <KeyStatus label="Groq" active={Boolean(status?.grok_api_key_set)} />
             </div>
           </div>
         </section>

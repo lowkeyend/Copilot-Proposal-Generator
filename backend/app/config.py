@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     )
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     grok_api_key: str = Field(default="", alias="GROK_API_KEY")
+    groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
 
     # ---- Qdrant ----
     qdrant_path: str = Field(default="../qdrant_local_db", alias="QDRANT_PATH")
@@ -101,6 +102,8 @@ class Settings(BaseSettings):
         "deepseek/deepseek-chat-v3.1:free",
         "qwen/qwen3-32b",
         "deepseek/deepseek-chat",
+        "groq/openai/gpt-oss-20b",
+        "groq/qwen/qwen3-32b",
     ]
 
     @property

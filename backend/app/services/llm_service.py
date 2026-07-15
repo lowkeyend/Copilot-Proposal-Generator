@@ -18,6 +18,7 @@ import httpx
 
 from app.config import get_settings
 from app.services.runtime_settings_service import (
+    get_grok_api_key,
     get_openrouter_api_key,
     get_openrouter_key_source,
 )
@@ -33,7 +34,7 @@ class LLMService:
 
     @property
     def available(self) -> bool:
-        return bool(get_openrouter_api_key())
+        return bool(get_openrouter_api_key() or get_grok_api_key())
 
     def key_source(self) -> str:
         return get_openrouter_key_source()
@@ -45,11 +46,18 @@ class LLMService:
             return model
         return self.settings.preferred_default_model
 
+    def _provider_for_model(self, model_id: str) -> str:
+        return "groq" if (model_id or "").startswith("groq/") else "openrouter"
+
+    def _provider_model_id(self, model_id: str) -> str:
+        return model_id.split("groq/", 1)[1] if model_id.startswith("groq/") else model_id
+
     def _candidate_models(self, model: Optional[str]) -> list[str]:
         resolved = self.resolve_model(model)
         candidates: list[str] = [resolved]
+        provider = self._provider_for_model(resolved)
         for item in self.settings.supported_models:
-            if item not in candidates:
+            if item not in candidates and self._provider_for_model(item) == provider:
                 candidates.append(item)
         return candidates
 
@@ -62,22 +70,37 @@ class LLMService:
     ) -> str:
         if not self.available:
             raise LLMError(
-                "OPENROUTER_API_KEY is not set. Add it to backend/.env to enable generation."
+                "No configured LLM provider key is available. Add a working key in Settings."
             )
-
-        api_key = get_openrouter_api_key()
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": self.settings.openrouter_app_url,
-            "X-Title": self.settings.openrouter_app_name,
-        }
-        url = f"{self.settings.openrouter_base_url.rstrip('/')}/chat/completions"
         async with httpx.AsyncClient(timeout=120.0) as client:
             errors: list[str] = []
             for model_id in self._candidate_models(model):
+                provider = self._provider_for_model(model_id)
+                provider_model = self._provider_model_id(model_id)
+                if provider == "groq":
+                    api_key = get_grok_api_key()
+                    if not api_key:
+                        errors.append(f"{model_id}: Groq API key is not configured.")
+                        continue
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    }
+                    url = "https://api.groq.com/openai/v1/chat/completions"
+                else:
+                    api_key = get_openrouter_api_key()
+                    if not api_key:
+                        errors.append(f"{model_id}: OpenRouter API key is not configured.")
+                        continue
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": self.settings.openrouter_app_url,
+                        "X-Title": self.settings.openrouter_app_name,
+                    }
+                    url = f"{self.settings.openrouter_base_url.rstrip('/')}/chat/completions"
                 payload: dict[str, Any] = {
-                    "model": model_id,
+                    "model": provider_model,
                     "messages": messages,
                     "temperature": temperature,
                     "max_tokens": max_tokens,
@@ -87,7 +110,7 @@ class LLMService:
                     try:
                         resp = await client.post(url, headers=headers, json=payload)
                     except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
-                        last_error = f"{model_id}: OpenRouter transport error: {type(exc).__name__}: {str(exc)[:220]}"
+                        last_error = f"{model_id}: {provider} transport error: {type(exc).__name__}: {str(exc)[:220]}"
                         if attempt < 2:
                             await asyncio.sleep(min(2 ** attempt, 5))
                             continue
@@ -111,22 +134,22 @@ class LLMService:
                         continue
                     if resp.status_code in {500, 502, 503, 504} and attempt < 2:
                         await asyncio.sleep(min(2 ** attempt, 5))
-                        last_error = f"{model_id}: OpenRouter transient error {resp.status_code}: {resp.text[:220]}"
+                        last_error = f"{model_id}: {provider} transient error {resp.status_code}: {resp.text[:220]}"
                         continue
                     if resp.status_code >= 400:
-                        last_error = f"{model_id}: OpenRouter error {resp.status_code}: {resp.text[:280]}"
+                        last_error = f"{model_id}: {provider} error {resp.status_code}: {resp.text[:280]}"
                         break
                     try:
                         data = resp.json()
                     except Exception as exc:
-                        last_error = f"{model_id}: OpenRouter invalid JSON response: {type(exc).__name__}: {str(exc)[:220]}"
+                        last_error = f"{model_id}: {provider} invalid JSON response: {type(exc).__name__}: {str(exc)[:220]}"
                         if attempt < 2:
                             await asyncio.sleep(min(2 ** attempt, 5))
                             continue
                         break
                     break
                 else:  # pragma: no cover
-                    last_error = f"{model_id}: OpenRouter request failed after retries."
+                    last_error = f"{model_id}: {provider} request failed after retries."
 
                 if not last_error:
                     break
@@ -144,23 +167,26 @@ class LLMService:
         api_key: Optional[str] = None,
     ) -> dict[str, str | bool]:
         key = (api_key or get_openrouter_api_key()).strip()
-        if not key:
+        model_id = self.resolve_model(model)
+        provider = self._provider_for_model(model_id)
+        effective_key = (api_key or (get_grok_api_key() if provider == "groq" else get_openrouter_api_key())).strip()
+        if not effective_key:
             return {
                 "ok": False,
                 "fallback": True,
-                "message": "No OpenRouter API key is configured.",
+                "message": f"No {provider.title()} API key is configured.",
                 "detail": "Set a key in Settings or backend env. Proposal generation is blocked until the key works.",
             }
-
-        model_id = self.resolve_model(model)
+        provider_model = self._provider_model_id(model_id)
         headers = {
-            "Authorization": f"Bearer {key}",
+            "Authorization": f"Bearer {effective_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": self.settings.openrouter_app_url,
-            "X-Title": self.settings.openrouter_app_name,
         }
+        if provider == "openrouter":
+            headers["HTTP-Referer"] = self.settings.openrouter_app_url
+            headers["X-Title"] = self.settings.openrouter_app_name
         payload: dict[str, Any] = {
-            "model": model_id,
+            "model": provider_model,
             "messages": [
                 {"role": "system", "content": "Reply with OK."},
                 {"role": "user", "content": "OK"},
@@ -168,7 +194,7 @@ class LLMService:
             "temperature": 0,
             "max_tokens": 1,
         }
-        url = f"{self.settings.openrouter_base_url.rstrip('/')}/chat/completions"
+        url = "https://api.groq.com/openai/v1/chat/completions" if provider == "groq" else f"{self.settings.openrouter_base_url.rstrip('/')}/chat/completions"
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(url, headers=headers, json=payload)
@@ -176,7 +202,7 @@ class LLMService:
                     return {
                         "ok": False,
                         "fallback": True,
-                        "message": "OpenRouter rejected the configured key or model.",
+                        "message": f"{provider.title()} rejected the configured key or model.",
                         "detail": f"{resp.status_code}: {resp.text[:500]}",
                     }
                 data = resp.json()
@@ -184,14 +210,14 @@ class LLMService:
             return {
                 "ok": True,
                 "fallback": False,
-                "message": "OpenRouter key and model are valid. Proposal generation will use the live LLM path.",
+                "message": f"{provider.title()} key and model are valid. Proposal generation will use the live LLM path.",
                 "detail": content.strip()[:100] or "Validated",
             }
         except Exception as exc:
             return {
                 "ok": False,
                 "fallback": True,
-                "message": "OpenRouter check failed. Proposal generation is blocked until the key or model is fixed.",
+                "message": f"{provider.title()} check failed. Proposal generation is blocked until the key or model is fixed.",
                 "detail": str(exc)[:500],
             }
 
