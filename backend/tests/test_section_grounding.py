@@ -4,6 +4,7 @@ import asyncio
 from app.agents.section_writer import (
     _clean_model_output,
     _compile_reference_layout,
+    _is_module_scope_request,
     _prune_unsupported_sentences,
     _validation_issues,
 )
@@ -110,6 +111,114 @@ def test_validation_rejects_unsupported_consulting_benefits() -> None:
     issues = _validation_issues(content, req, evidence)
 
     assert any("improved performance" in issue for issue in issues)
+
+
+def test_module_scope_request_detected_from_prompt() -> None:
+    req = GenerateSectionRequest(
+        section_title="Scope of Work",
+        keywords=["scope", "module"],
+        context=ClientContext(
+            client_name="MMBL",
+            industry="Banking",
+            project_type="Implementation",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(),
+        ),
+        proposal_family="Temenos",
+        prompt="Prepare a proposal for MMBL and add the Forex module based on the selected documents.",
+        require_evidence=True,
+    )
+
+    assert _is_module_scope_request(req) is True
+
+
+def test_module_scope_validation_flags_unsupported_deployment_leakage() -> None:
+    req = GenerateSectionRequest(
+        section_title="Scope of Work",
+        keywords=["scope", "module"],
+        context=ClientContext(
+            client_name="MMBL",
+            industry="Banking",
+            project_type="Implementation",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(),
+        ),
+        proposal_family="Temenos",
+        prompt="Prepare a proposal for MMBL and add the Forex module based on the selected documents.",
+        require_evidence=True,
+    )
+    evidence = [
+        EvidenceChunk(
+            text=(
+                "The Temenos Treasury Forex component supports deal capture, position updates, "
+                "revaluation, accounting, brokerage, SWIFT confirmations, payments, and print advices."
+            ),
+            score=1.0,
+            summary="Forex component scope",
+            source_section="Forex Module Scope",
+            source_document="mmbl forex info.txt",
+            source_proposal="mmbl forex info.txt",
+            proposal_family="Temenos",
+        )
+    ]
+    content = (
+        "Systems Limited will implement and configure the Temenos Transact Treasury Module to support "
+        "MMBL's foreign exchange operations.\n\n"
+        "Implementation Scope\n"
+        "- Configuration of the Forex component for spot, forward, and swap processing.\n"
+        "- Deployment support to ensure the module is operational in the production environment, "
+        "including cutover planning and go-live execution."
+    )
+
+    issues = _validation_issues(content, req, evidence)
+
+    assert any("unsupported module-implementation leakage" in issue for issue in issues)
+
+
+def test_module_scope_pruning_removes_unsupported_deployment_bullets() -> None:
+    req = GenerateSectionRequest(
+        section_title="Scope of Work",
+        keywords=["scope", "module"],
+        context=ClientContext(
+            client_name="MMBL",
+            industry="Banking",
+            project_type="Implementation",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(),
+        ),
+        proposal_family="Temenos",
+        prompt="Prepare a proposal for MMBL and add the Forex module based on the selected documents.",
+        require_evidence=True,
+    )
+    evidence = [
+        EvidenceChunk(
+            text=(
+                "The Temenos Treasury Forex component supports deal capture, position updates, "
+                "revaluation, accounting, brokerage, SWIFT confirmations, payments, and print advices."
+            ),
+            score=1.0,
+            summary="Forex component scope",
+            source_section="Forex Module Scope",
+            source_document="mmbl forex info.txt",
+            source_proposal="mmbl forex info.txt",
+            proposal_family="Temenos",
+        )
+    ]
+    content = (
+        "Implementation Scope\n"
+        "- Configuration of the Forex component for spot, forward, and swap processing.\n"
+        "- Deployment support to ensure the module is operational in the production environment.\n"
+        "- Validation of interfaces, accounting entries, and operational controls."
+    )
+
+    pruned = _prune_unsupported_sentences(content, req, evidence)
+
+    assert "deployment support" not in pruned.lower()
+    assert "production environment" not in pruned.lower()
+    assert "configuration of the forex component" in pruned.lower()
 
 
 def test_clean_model_output_converts_html_lists_to_bullets() -> None:

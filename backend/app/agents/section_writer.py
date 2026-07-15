@@ -76,6 +76,26 @@ _CONSULTING_PHRASES = (
     "operating model",
     "target state",
 )
+_MODULE_SCOPE_HEADING_SCHEMA = [
+    "Implementation Scope",
+    "Functional Coverage",
+    "Configuration & Processing",
+    "Interfaces & Controls",
+    "Testing & Handover",
+]
+_UNSUPPORTED_MODULE_SCOPE_PHRASES = (
+    "deployment support",
+    "cutover planning",
+    "go-live execution",
+    "go live execution",
+    "production environment",
+    "production deployment",
+    "deployment documentation",
+    "rollback planning",
+    "hypercare",
+    "post go-live support",
+    "stabilization",
+)
 _REFERENCE_SECTION_SCHEMAS: dict[str, dict[str, object]] = {
     "scope of work": {
         "subheadings": [
@@ -291,6 +311,15 @@ def _support_terms(text: str) -> set[str]:
 def _section_style_guide(req: GenerateSectionRequest) -> str:
     title = (req.section_title or "").strip().lower()
     if title == "scope of work":
+        if _is_module_scope_request(req):
+            return (
+                "- Write as a contractual module-implementation scope section, not as an upgrade scope and not as product marketing.\n"
+                "- Use a clear lead paragraph followed by concise subheadings for implementation scope, functional coverage, configuration, interfaces, controls, and testing where supported.\n"
+                "- State only in-scope implementation activities and supported deliverables.\n"
+                "- Do not introduce deployment, cutover, rollback, hypercare, post-go-live support, or production-readiness activities unless those exact items are explicitly supported by the evidence facts.\n"
+                "- Do not reuse upgrade-specific headings such as Environment Readiness Assessment, Upgrade Analysis, Core Technical Upgrade, Deployment & Go-Live, or Post Go-Live Support.\n"
+                "- Prefer precise operational wording over broad capability summaries."
+            )
         return (
             "- Write in a contractual implementation style, not a consulting style.\n"
             "- Preserve the source section structure where supported, including specific workstream headings and activity lists.\n"
@@ -331,6 +360,12 @@ def _section_style_guide(req: GenerateSectionRequest) -> str:
 def _section_boundary_rules(req: GenerateSectionRequest) -> str:
     title = (req.section_title or "").strip().lower()
     if title == "scope of work":
+        if _is_module_scope_request(req):
+            return (
+                "- Exclude upgrade-release wording, release-to-release uplift statements, environment readiness, rollback, deployment support, go-live execution, production deployment, hypercare, and generic deliverable lists unless explicitly supported by the evidence facts.\n"
+                "- Exclude governance bodies, executive sponsorship, communication plans, PMO language, operating-model language, and strategic-value commentary.\n"
+                "- Exclude inferred benefits such as improved performance, stronger controls, enhanced architecture, audit readiness, or risk reduction unless those exact outcomes appear in the evidence facts."
+            )
         return (
             "- Exclude governance bodies, executive sponsorship, communication plans, PMO language, and strategic-value commentary unless explicitly present in scope evidence.\n"
             "- Exclude inferred benefits such as improved performance, enhanced architecture, stronger security, and new capabilities unless those exact benefits appear in the evidence."
@@ -349,6 +384,11 @@ def _section_boundary_rules(req: GenerateSectionRequest) -> str:
 
 
 def _reference_section_schema(req: GenerateSectionRequest) -> str:
+    if (req.section_title or "").strip().lower() == "scope of work" and _is_module_scope_request(req):
+        return (
+            "For module implementation scope sections, use this structure where the evidence supports it:\n- "
+            + "\n- ".join(_MODULE_SCOPE_HEADING_SCHEMA)
+        )
     schema = _REFERENCE_SECTION_SCHEMAS.get((req.section_title or "").strip().lower())
     if not schema:
         return "No fixed reference subheading schema is enforced for this section."
@@ -1070,6 +1110,63 @@ def _is_established_context(req: GenerateSectionRequest) -> bool:
     return "greenfield" not in context_text or "established" in context_text or "migration" in context_text
 
 
+def _requested_modules(req: GenerateSectionRequest) -> list[str]:
+    text = " ".join(filter(None, [req.prompt or "", req.instruction or "", req.section_title or ""]))
+    matches = re.findall(
+        r"\b(?:add|include|implement|introduce)\s+(?:the\s+|a\s+|an\s+)?([A-Za-z][A-Za-z0-9&/ +_-]{1,40}?)\s+module\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    modules: list[str] = []
+    for match in matches:
+        label = _clean_phrase(re.sub(r"^(the|a|an)\s+", "", match, flags=re.IGNORECASE))
+        if label:
+            modules.append(f"{label} module")
+    return _dedupe_preserve_order(modules)
+
+
+def _prompt_requests_upgrade(req: GenerateSectionRequest) -> bool:
+    combined = _clean_phrase(" ".join(filter(None, [req.prompt or "", req.instruction or ""]))).lower()
+    if not combined:
+        intake = getattr(req.context, "intake", None)
+        return bool(getattr(intake, "current_version", "") and getattr(intake, "target_version", ""))
+    negative_patterns = (
+        r"\bdo not frame (?:this|it) as (?:a |an )?technical upgrade\b",
+        r"\bnot (?:a |an )?technical upgrade\b",
+        r"\bdo not use upgrade wording\b",
+        r"\bwithout upgrade wording\b",
+        r"\bnot an upgrade\b",
+    )
+    if any(re.search(pattern, combined, flags=re.IGNORECASE) for pattern in negative_patterns):
+        return False
+    explicit_upgrade = any(
+        phrase in combined
+        for phrase in (
+            "technical upgrade",
+            "upgrade from",
+            "like-for-like upgrade",
+            "current version",
+            "target version",
+            "r20 to",
+            "r21 to",
+            "r22 to",
+            "r23 to",
+            "r24 to",
+            "r25 to",
+            "r26 to",
+        )
+    )
+    return explicit_upgrade
+
+
+def _is_module_scope_request(req: GenerateSectionRequest) -> bool:
+    title = (req.section_title or "").strip().lower()
+    if title != "scope of work":
+        return False
+    modules = _requested_modules(req)
+    return bool(modules) and not _prompt_requests_upgrade(req)
+
+
 def _apply_context_guardrails(content: str, req: GenerateSectionRequest) -> str:
     result = content.strip()
     client = _canonical_client_name(req.context.client_name or "")
@@ -1276,6 +1373,8 @@ def _clean_model_output(text: str, section_title: str) -> str:
         if first == title:
             lines = lines[1:]
     cleaned = "\n".join(lines).strip()
+    cleaned = re.sub(r"(?m)(The scope includes:)\s*-\s*", r"\1\n\n- ", cleaned)
+    cleaned = re.sub(r"\s+-\s+", "\n- ", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned
 
@@ -1366,7 +1465,13 @@ def _validation_issues(
         for phrase in forbidden:
             if phrase in lowered and phrase not in evidence_text:
                 issues.append(f"scope section contains cross-section leakage: {phrase}")
+        if _is_module_scope_request(req):
+            for phrase in _UNSUPPORTED_MODULE_SCOPE_PHRASES:
+                if phrase in lowered and phrase not in evidence_text:
+                    issues.append(f"scope section contains unsupported module-implementation leakage: {phrase}")
     schema = _REFERENCE_SECTION_SCHEMAS.get((req.section_title or "").strip().lower())
+    if (req.section_title or "").strip().lower() == "scope of work" and _is_module_scope_request(req):
+        schema = {"subheadings": _MODULE_SCOPE_HEADING_SCHEMA, "minimum_matches": 2}
     if schema:
         subheadings = [str(item) for item in schema.get("subheadings", [])]
         minimum_matches = int(schema.get("minimum_matches", 0) or 0)
@@ -1414,18 +1519,20 @@ def _prune_unsupported_sentences(
     paragraphs = [part.strip() for part in re.split(r"\n{2,}", content or "") if part.strip()]
     kept_paragraphs: list[str] = []
     for paragraph in paragraphs:
-        if paragraph.lstrip().startswith(("#", "-", "*")):
-            kept_paragraphs.append(paragraph)
-            continue
+        units = [line.strip() for line in paragraph.splitlines() if line.strip()] if paragraph.lstrip().startswith(("#", "-", "*")) else _split_sentences(paragraph)
         kept_sentences: list[str] = []
-        for sentence in _split_sentences(paragraph):
+        for sentence in units:
+            if _is_module_scope_request(req):
+                low = sentence.lower()
+                if any(phrase in low and phrase not in " ".join((_clean_phrase(chunk.text or "").lower() for chunk in evidence)) for phrase in _UNSUPPORTED_MODULE_SCOPE_PHRASES):
+                    continue
             sentence_terms = _support_terms(sentence)
             evidence_overlap = len(sentence_terms & evidence_terms)
             context_overlap = len(sentence_terms & context_terms)
             if len(sentence_terms) < 4 or evidence_overlap + context_overlap >= 2:
                 kept_sentences.append(sentence)
         if kept_sentences:
-            kept_paragraphs.append(" ".join(kept_sentences))
+            kept_paragraphs.append("\n".join(kept_sentences) if paragraph.lstrip().startswith(("#", "-", "*")) else " ".join(kept_sentences))
     return "\n\n".join(kept_paragraphs).strip()
 
 
