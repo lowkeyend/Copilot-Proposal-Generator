@@ -754,6 +754,17 @@ def _section_kind(section_title: str) -> str:
     return "generic"
 
 
+def _section_max_tokens(section_title: str) -> int:
+    kind = _section_kind(section_title)
+    if kind == "executive_summary":
+        return 750
+    if kind == "solution":
+        return 1100
+    if kind == "scope":
+        return 1300
+    return 1000
+
+
 def _filtered_context_facts(req: AdaptSectionRequest, evidence_lines: list[str]) -> list[str]:
     intake = req.context.intake
     facts = [
@@ -888,7 +899,7 @@ Return final proposal content only.
         ],
         model=req.model,
         temperature=0.12,
-        max_tokens=2200,
+        max_tokens=_section_max_tokens(req.section_title),
     )
 
 

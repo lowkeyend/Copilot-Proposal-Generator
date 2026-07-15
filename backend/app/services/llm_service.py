@@ -84,7 +84,14 @@ class LLMService:
                 }
                 last_error = ""
                 for attempt in range(3):
-                    resp = await client.post(url, headers=headers, json=payload)
+                    try:
+                        resp = await client.post(url, headers=headers, json=payload)
+                    except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+                        last_error = f"{model_id}: OpenRouter transport error: {type(exc).__name__}: {str(exc)[:220]}"
+                        if attempt < 2:
+                            await asyncio.sleep(min(2 ** attempt, 5))
+                            continue
+                        break
                     if resp.status_code == 429 and attempt < 2:
                         retry_after = resp.headers.get("Retry-After", "").strip()
                         delay = 0.0
@@ -102,10 +109,21 @@ class LLMService:
                                 delay = 0.0
                         await asyncio.sleep(max(1.0, min(delay or 3.0, 20.0)))
                         continue
+                    if resp.status_code in {500, 502, 503, 504} and attempt < 2:
+                        await asyncio.sleep(min(2 ** attempt, 5))
+                        last_error = f"{model_id}: OpenRouter transient error {resp.status_code}: {resp.text[:220]}"
+                        continue
                     if resp.status_code >= 400:
                         last_error = f"{model_id}: OpenRouter error {resp.status_code}: {resp.text[:280]}"
                         break
-                    data = resp.json()
+                    try:
+                        data = resp.json()
+                    except Exception as exc:
+                        last_error = f"{model_id}: OpenRouter invalid JSON response: {type(exc).__name__}: {str(exc)[:220]}"
+                        if attempt < 2:
+                            await asyncio.sleep(min(2 ** attempt, 5))
+                            continue
+                        break
                     break
                 else:  # pragma: no cover
                     last_error = f"{model_id}: OpenRouter request failed after retries."
