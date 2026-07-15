@@ -214,6 +214,12 @@ function todayLabel() {
   }).format(new Date());
 }
 
+function providerLabel(model: string) {
+  if (model.startsWith("groq/")) return "Groq";
+  if (model.startsWith("openrouter/")) return "OpenRouter";
+  return "Custom";
+}
+
 export default function WorkspacePage() {
   const router = useRouter();
   const store = useProposalStore();
@@ -242,6 +248,8 @@ export default function WorkspacePage() {
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState("");
   const [loadedTemplateSignature, setLoadedTemplateSignature] = useState("");
+  const activeModel = store.model || models[0];
+  const activeProvider = providerLabel(activeModel);
 
   useEffect(() => {
     api.listTemplates()
@@ -548,6 +556,15 @@ export default function WorkspacePage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <div className="hidden min-w-[240px] rounded-xl border border-primary/20 bg-white/90 px-3 py-2 text-right shadow-sm md:block">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
+              Active LLM
+            </div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">{activeProvider}</div>
+            <div className="truncate text-xs text-muted-foreground" title={activeModel}>
+              {activeModel}
+            </div>
+          </div>
           <Button variant="outline" size="sm" onClick={() => router.push("/knowledge-base")}>
             <Database className="h-4 w-4" />
             Knowledge Base
@@ -562,6 +579,15 @@ export default function WorkspacePage() {
 
       <Card className="mb-5 border-primary/20 bg-gradient-to-r from-white via-white to-muted/30">
         <CardContent className="space-y-4 pt-5">
+          <div className="rounded-xl border border-primary/15 bg-white/85 px-3 py-2 md:hidden">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
+              Active LLM
+            </div>
+            <div className="mt-1 text-sm font-semibold text-slate-900">{activeProvider}</div>
+            <div className="truncate text-xs text-muted-foreground" title={activeModel}>
+              {activeModel}
+            </div>
+          </div>
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-[280px] flex-1">
               <div className="text-[10px] font-semibold uppercase tracking-[0.35em] text-muted-foreground">
