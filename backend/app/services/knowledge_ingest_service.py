@@ -26,6 +26,22 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
+def _clean_multiline(text: str) -> str:
+    text = (text or "").replace("\x00", " ").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+    collapsed: list[str] = []
+    blank_run = 0
+    for line in lines:
+        if not line:
+            blank_run += 1
+            if blank_run <= 1:
+                collapsed.append("")
+            continue
+        blank_run = 0
+        collapsed.append(line)
+    return "\n".join(collapsed).strip()
+
+
 def _summary(text: str, limit: int = 12) -> str:
     words = text.split()
     if not words:
@@ -179,20 +195,112 @@ def _extract_text(name: str, data: bytes) -> str:
     if lower.endswith(".pdf"):
         return _extract_pdf(data)
     if lower.endswith((".txt", ".md")):
-        return _clean(data.decode("utf-8", errors="ignore"))
+        return _clean_multiline(data.decode("utf-8", errors="ignore"))
     raise RuntimeError("Unsupported file type. Upload .docx, .pdf, .txt, or .md files.")
 
 
+def _looks_like_plaintext_heading(line: str) -> bool:
+    stripped = (line or "").strip().strip("#").strip()
+    if not stripped:
+        return False
+    if len(stripped) > 80:
+        return False
+    if stripped.endswith(":") and len(stripped.split()) <= 8:
+        return True
+    alpha = re.sub(r"[^A-Za-z ]+", "", stripped)
+    words = [word for word in alpha.split() if word]
+    if 0 < len(words) <= 8 and sum(1 for word in words if word[:1].isupper()) >= max(1, len(words) - 1):
+        return True
+    if stripped.isupper() and 0 < len(stripped.split()) <= 10:
+        return True
+    return False
+
+
+def _is_tabular_line(line: str) -> bool:
+    stripped = (line or "").strip()
+    if not stripped:
+        return False
+    if "|" in stripped:
+        return True
+    if re.search(r"\bmandays?\b|\brate\b|\bcommercial quote\b|\$\s*\d", stripped, flags=re.IGNORECASE):
+        return True
+    if len(re.findall(r"\d+", stripped)) >= 4:
+        return True
+    return False
+
+
+def _extract_plaintext_sections(name: str, text: str) -> list[tuple[str, list[str]]]:
+    lines = [line.rstrip() for line in (text or "").split("\n")]
+    sections: list[tuple[str, list[str]]] = []
+    current_heading = Path(name).stem or "Document Overview"
+    current_lines: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_lines
+        cleaned = [line for line in current_lines if line.strip()]
+        if cleaned:
+            sections.append((current_heading, cleaned))
+        current_lines = []
+
+    for raw in lines:
+        line = raw.strip()
+        if not line:
+            current_lines.append("")
+            continue
+        if _looks_like_plaintext_heading(line):
+            flush()
+            current_heading = line.strip("# ").strip()
+            continue
+        current_lines.append(line)
+
+    flush()
+    return sections or [(Path(name).stem or "Document Overview", [line for line in lines if line.strip()])]
+
+
 def _chunk_generic_document(name: str, text: str) -> list[ParsedChunk]:
-    section = Path(name).stem or "Document Overview"
-    chunks = _chunk_text(text)
-    return [
+    parsed: list[ParsedChunk] = []
+    for heading, lines in _extract_plaintext_sections(name, text):
+        block: list[str] = []
+        block_is_table = False
+
+        def flush_block() -> None:
+            nonlocal block, block_is_table
+            joined = "\n".join(block if block_is_table else [item for item in block if item.strip()]).strip()
+            if not joined:
+                block = []
+                block_is_table = False
+                return
+            chunks = [joined] if block_is_table else _chunk_text(joined)
+            for chunk in chunks:
+                parsed.append(
+                    ParsedChunk(
+                        text=chunk,
+                        section=heading or "Document Overview",
+                        summary=f"{heading or 'Document Overview'}: {_summary(_clean(chunk), limit=10)}",
+                    )
+                )
+            block = []
+            block_is_table = False
+
+        for line in lines:
+            if not line.strip():
+                flush_block()
+                continue
+            line_is_table = _is_tabular_line(line)
+            if block and line_is_table != block_is_table:
+                flush_block()
+            block.append(line)
+            block_is_table = line_is_table
+
+        flush_block()
+
+    return parsed or [
         ParsedChunk(
             text=chunk,
-            section=section,
-            summary=f"{section}: {_summary(chunk, limit=10)}",
+            section=Path(name).stem or "Document Overview",
+            summary=f"{Path(name).stem or 'Document Overview'}: {_summary(chunk, limit=10)}",
         )
-        for chunk in chunks
+        for chunk in _chunk_text(_clean(text))
     ]
 
 
