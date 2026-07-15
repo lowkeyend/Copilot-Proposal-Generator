@@ -1182,7 +1182,14 @@ Return final proposal content only.
 """
     return await get_llm().chat(
         [
-            {"role": "system", "content": "You write grounded proposal sections from retrieved evidence only."},
+            {
+                "role": "system",
+                "content": (
+                    "You write grounded proposal sections from retrieved evidence only. "
+                    "Return only the final client-facing proposal text. "
+                    "Do not reveal reasoning. Do not emit <think> tags, notes, analysis, or planning text."
+                ),
+            },
             {"role": "user", "content": prompt},
         ],
         model=req.model,
@@ -1296,10 +1303,14 @@ def _validate_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief) 
 
 
 def _sanitize_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief, evidence_lines: list[str]) -> str:
-    cleaned = _strip_redundant_section_title(
-        _apply_client_name_guardrail(text, req, evidence_lines),
-        req.section_title,
-    )
+    cleaned = _apply_client_name_guardrail(text, req, evidence_lines)
+    cleaned = re.sub(r"(?is)<think>.*?</think>", " ", cleaned)
+    cleaned = re.sub(r"(?is)^.*?</think>\s*", "", cleaned)
+    cleaned = re.sub(r"(?im)^the user wants .*?$", "", cleaned)
+    cleaned = re.sub(r"(?im)^first, i need to .*?$", "", cleaned)
+    cleaned = re.sub(r"(?im)^looking at the supported evidence.*?$", "", cleaned)
+    cleaned = re.sub(r"(?im)^now, structure the section.*?$", "", cleaned)
+    cleaned = _strip_redundant_section_title(cleaned, req.section_title)
     reference_corpus = f"{req.reference_content}\n" + "\n".join(brief.must_change) + "\n".join(brief.must_preserve)
     reference_lower = reference_corpus.lower()
     sentences = re.split(r"(?<=[.!?])\s+", cleaned)
@@ -1324,6 +1335,12 @@ def _looks_like_meta_output(text: str) -> bool:
     if not lowered:
         return True
     markers = (
+        "<think>",
+        "</think>",
+        "the user wants",
+        "first, i need to",
+        "looking at the supported evidence",
+        "now, structure the section",
         "user safety:",
         "we need to write",
         "must not mention",
@@ -1405,7 +1422,13 @@ Return final proposal content only.
 """
     return await llm.chat(
         [
-            {"role": "system", "content": "You revise proposal sections and must apply the master prompt precisely."},
+            {
+                "role": "system",
+                "content": (
+                    "You revise proposal sections and must apply the master prompt precisely. "
+                    "Return only final proposal text. Do not reveal reasoning or emit <think> blocks."
+                ),
+            },
             {"role": "user", "content": retry_prompt},
         ],
         model=req.model,
