@@ -30,6 +30,17 @@ export default function SettingsPage() {
   const [detail, setDetail] = useState<string>("");
   const [error, setError] = useState<string>("");
 
+  function selectedProviderLabel() {
+    if (store.model.startsWith("groq/")) return "Groq";
+    if (store.model.startsWith("openrouter/")) return "OpenRouter";
+    return "LLM";
+  }
+
+  function selectedProviderKey() {
+    if (store.model.startsWith("groq/")) return groqKey.trim();
+    return openrouterKey.trim();
+  }
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       setOpenrouterKey(window.localStorage.getItem("proposal-copilot-openrouter-key") || "");
@@ -98,7 +109,7 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleCheck(apiKey = openrouterKey) {
+  async function handleCheck(apiKey = selectedProviderKey()) {
     setChecking(true);
     setError("");
     setMessage("");
@@ -106,7 +117,7 @@ export default function SettingsPage() {
     try {
       const trimmed = apiKey.trim();
       const result = await api.checkOpenRouterSettings({ api_key: trimmed, model: store.model });
-      setMessage(result.ok ? result.message : result.message || "OpenRouter check failed.");
+      setMessage(result.ok ? result.message : result.message || `${selectedProviderLabel()} check failed.`);
       setDetail(result.detail || `Model checked: ${result.model}.`);
       setStatus({
         api_key_set: result.ok,
@@ -117,7 +128,7 @@ export default function SettingsPage() {
         models: models.length ? models : [result.model].filter(Boolean),
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to check OpenRouter settings.");
+      setError(err instanceof Error ? err.message : `Failed to check ${selectedProviderLabel()} settings.`);
     } finally {
       setChecking(false);
     }
@@ -130,8 +141,8 @@ export default function SettingsPage() {
     try {
       const updated = await persistKeys(openrouterKey, geminiKey, groqKey);
       setStatus(updated);
-      const result = await api.checkOpenRouterSettings({ api_key: openrouterKey.trim(), model: store.model });
-      setMessage(result.ok ? result.message : result.message || "OpenRouter check failed.");
+      const result = await api.checkOpenRouterSettings({ api_key: selectedProviderKey(), model: store.model });
+      setMessage(result.ok ? result.message : result.message || `${selectedProviderLabel()} check failed.`);
       setDetail(result.detail || `Source: ${updated.source}.`);
       setStatus({
         api_key_set: result.ok,
@@ -142,7 +153,7 @@ export default function SettingsPage() {
         models: updated.models.length ? updated.models : models,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save and check LLM settings.");
+      setError(err instanceof Error ? err.message : `Failed to save and check ${selectedProviderLabel()} settings.`);
     } finally {
       setSaving(false);
       setChecking(false);
@@ -158,9 +169,8 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Configure provider keys once and reuse them for generation, docs queries, RFP parsing,
-            and planner flows. OpenRouter is checked for live generation today; Gemini and Groq are
-            stored alongside it for use in the same workspace.
+            Configure provider keys once and reuse them for generation, docs queries, and RFP parsing.
+            The selected model determines which provider key is checked and used for live generation.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -183,9 +193,9 @@ export default function SettingsPage() {
               <KeyRound className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">OpenRouter configuration</h2>
+              <h2 className="text-lg font-semibold">LLM configuration</h2>
               <p className="text-sm text-muted-foreground">
-                Save a key once and the app will keep using it until you change it.
+                Save keys once and the app will use the key that matches the selected model.
               </p>
             </div>
           </div>
