@@ -155,6 +155,7 @@ function applyWorkspaceContextToReference(
   targetVersion: string
 ) {
   let next = content || "";
+  const today = todayLabel();
   const normalizedClient = clientName.trim();
   if (normalizedClient) {
     const candidates = [
@@ -180,6 +181,14 @@ function applyWorkspaceContextToReference(
       `from ${fromVersion} to ${toVersion}`
     );
   }
+  next = next.replace(
+    /\bDate:\s*[A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?\s*,?\s+\d{4}\b/gi,
+    `Date: ${today}`
+  );
+  next = next.replace(
+    /\bDate:\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}\b/gi,
+    `Date: ${today}`
+  );
   return next;
 }
 
@@ -220,6 +229,8 @@ export default function WorkspacePage() {
     "deepseek/deepseek-chat-v3.1:free",
     "qwen/qwen3-32b",
     "deepseek/deepseek-chat",
+    "groq/openai/gpt-oss-20b",
+    "groq/qwen/qwen3-32b",
   ]);
 
   const [evidenceFor, setEvidenceFor] = useState<SectionResult | null>(null);
