@@ -72,22 +72,34 @@ _SECTION_FORBIDDEN_PHRASES = {
     "scope": (
         "stakeholder alignment",
         "project governance",
+        "governance",
+        "project plan",
         "communication protocols",
         "data migration",
         "post-deployment stabilization",
+        "post-deployment support",
+        "post go-live",
+        "go-live preparation",
+        "user training",
+        "user enablement",
         "regulatory compliance",
         "streamlined",
     ),
     "solution": (
         "stakeholder alignment",
         "project governance",
+        "governance",
+        "project plan",
         "data migration",
         "fully automated",
         "streamlined",
+        "regulatory compliance",
     ),
     "executive_summary": (
         "stakeholder alignment",
         "project governance",
+        "governance",
+        "project plan",
         "data migration",
         "fully automated",
         "streamlined",
@@ -893,6 +905,8 @@ def _normalize_section_format(text: str) -> str:
     formatted = re.sub(r"\s+-\s+\*\*", r"\n- **", formatted)
     formatted = re.sub(r"\.\s+(\d+\.\s+\*\*)", r".\n\n\1", formatted)
     formatted = re.sub(r"\s+([*-])\s+", r"\n\1 ", formatted)
+    formatted = re.sub(r"(?<!\n)(\d+\.)\s+\*\*", r"\n\1 **", formatted)
+    formatted = re.sub(r"\*\*Implementation activities\*\*\s*(\d+\.)", r"**Implementation activities**\n\n\1", formatted)
     formatted = re.sub(r"\n{3,}", "\n\n", formatted)
     return formatted.strip()
 
