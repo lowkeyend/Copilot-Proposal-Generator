@@ -84,6 +84,10 @@ _SECTION_FORBIDDEN_PHRASES = {
         "user enablement",
         "regulatory compliance",
         "streamlined",
+        "improved performance",
+        "enhanced architecture",
+        "stronger security controls",
+        "new product capabilities",
     ),
     "solution": (
         "stakeholder alignment",
@@ -107,6 +111,42 @@ _SECTION_FORBIDDEN_PHRASES = {
         "optimization",
     ),
 }
+
+_UPGRADE_ONLY_SCOPE_UNITS = (
+    "environment readiness assessment",
+    "core technical upgrade",
+    "upgrade analysis",
+    "post go-live support",
+    "hypercare support",
+    "stabilization",
+    "cutover planning",
+    "production deployment",
+    "rollback planning",
+    "go-live execution support",
+    "deployment documentation",
+    "mock upgrade",
+    "dress rehearsal",
+)
+
+_MODULE_SCOPE_HEADINGS = (
+    "Implementation Scope",
+    "Functional Coverage",
+    "Configuration & Processing",
+    "Interfaces & Controls",
+    "Testing & Handover",
+)
+
+_UNSUPPORTED_SCOPE_FRAGMENTS = (
+    r",?\s*and deployment support for the agreed operating model",
+    r",?\s*deployment support for the agreed operating model",
+    r",?\s*deployment support",
+    r",?\s*cutover preparation",
+    r",?\s*controlled go-live",
+    r",?\s*go-live execution support",
+    r",?\s*production deployment",
+    r",?\s*rollback planning",
+    r",?\s*hypercare support(?: for stabilization)?",
+)
 
 
 def _clean(text: str) -> str:
@@ -884,6 +924,45 @@ def _evidence_supports_term(term: str, evidence_lines: list[str]) -> bool:
     return any(needle in _clean(line).lower() for line in evidence_lines)
 
 
+def _evidence_supports_any(term: str, evidence_lines: list[str]) -> bool:
+    variants = {
+        _clean(term).lower(),
+        _clean(term).lower().replace("&", "and"),
+        _clean(term).lower().replace(" module", ""),
+    }
+    compact = {item for item in variants if item}
+    if not compact:
+        return False
+    normalized_evidence = [_clean(line).lower().replace("&", "and") for line in evidence_lines]
+    return any(any(variant in line for variant in compact) for line in normalized_evidence)
+
+
+def _scope_is_module_implementation(req: AdaptSectionRequest) -> bool:
+    return _section_kind(req.section_title) == "scope" and _is_major_scope_shift(req)
+
+
+def _upgrade_scope_unit_allowed(req: AdaptSectionRequest, sentence: str, evidence_lines: list[str]) -> bool:
+    if not _scope_is_module_implementation(req):
+        return True
+    low = _clean(sentence).lower()
+    return not any(unit in low and not _evidence_supports_term(unit, evidence_lines) for unit in _UPGRADE_ONLY_SCOPE_UNITS)
+
+
+def _strip_unsupported_scope_fragments(text: str, req: AdaptSectionRequest, evidence_lines: list[str]) -> str:
+    if not _scope_is_module_implementation(req):
+        return text
+    cleaned = text or ""
+    for pattern in _UNSUPPORTED_SCOPE_FRAGMENTS:
+        phrase = re.sub(r"[\\,\?\:\(\)\[\]\*\+\^$]", "", pattern).replace(r"\s*", " ").strip()
+        if phrase and _evidence_supports_term(phrase, evidence_lines):
+            continue
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+\.", ".", cleaned)
+    cleaned = re.sub(r"\s+,", ",", cleaned)
+    return cleaned.strip()
+
+
 def _prune_unsupported_adaptation_sentences(
     content: str,
     req: AdaptSectionRequest,
@@ -904,6 +983,8 @@ def _prune_unsupported_adaptation_sentences(
         for sentence in units:
             low = sentence.lower()
             if any(phrase in low and not _evidence_supports_term(phrase, evidence_lines) for phrase in forbidden):
+                continue
+            if not _upgrade_scope_unit_allowed(req, sentence, evidence_lines):
                 continue
             sentence_terms = _support_terms(sentence)
             evidence_overlap = len(sentence_terms & evidence_terms)
@@ -991,7 +1072,21 @@ async def _extract_section_schema(
         return {}
     kind = _section_kind(req.section_title)
     if kind == "scope":
-        shape = """
+        if _scope_is_module_implementation(req):
+            shape = """
+{
+  "objective": "string",
+  "module_name": "string",
+  "in_scope_capabilities": ["string"],
+  "configuration_items": ["string"],
+  "interfaces": ["string"],
+  "controls": ["string"],
+  "testing": ["string"],
+  "handover": ["string"]
+}
+"""
+        else:
+            shape = """
 {
   "objective": "string",
   "upgrade_path": "string",
@@ -1175,7 +1270,9 @@ Rules:
 - Do not output HTML or XML tags.
 - Do not invent benefits, governance, timelines, testing cycles, or technical steps that are not directly supported.
 - If a point is not present in STRUCTURED FACTS, omit it.
- - If a field in SECTION SCHEMA is empty, omit it.
+- If a field in SECTION SCHEMA is empty, omit it.
+- If this request is a module implementation rather than a technical upgrade, do not reuse upgrade-only headings. Use these headings where supported instead: Implementation Scope, Functional Coverage, Configuration & Processing, Interfaces & Controls, Testing & Handover.
+- In a module implementation scope, do not mention cutover planning, rollback, production deployment, hypercare, stabilization, or release-to-release uplift unless the evidence explicitly supports those points.
 {_section_contract(req)}
 
 Return final proposal content only.
@@ -1311,6 +1408,7 @@ def _sanitize_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief, 
     cleaned = re.sub(r"(?im)^looking at the supported evidence.*?$", "", cleaned)
     cleaned = re.sub(r"(?im)^now, structure the section.*?$", "", cleaned)
     cleaned = _strip_redundant_section_title(cleaned, req.section_title)
+    cleaned = _strip_unsupported_scope_fragments(cleaned, req, evidence_lines)
     reference_corpus = f"{req.reference_content}\n" + "\n".join(brief.must_change) + "\n".join(brief.must_preserve)
     reference_lower = reference_corpus.lower()
     sentences = re.split(r"(?<=[.!?])\s+", cleaned)
@@ -1327,7 +1425,41 @@ def _sanitize_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief, 
             kept.append(sentence)
     grounded = _clean(" ".join(kept) or cleaned)
     grounded = _prune_unsupported_adaptation_sentences(grounded, req, evidence_lines)
+    if _scope_is_module_implementation(req):
+        grounded = _rewrite_module_scope_headings(grounded, req, evidence_lines)
     return _normalize_section_format(grounded)
+
+
+def _rewrite_module_scope_headings(text: str, req: AdaptSectionRequest, evidence_lines: list[str]) -> str:
+    requested_modules = [module for module in _extract_requested_modules(req) if _evidence_supports_any(module, evidence_lines)]
+    module_name = requested_modules[0] if requested_modules else ""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return cleaned
+    replacements = {
+        r"(?im)^\*\*core upgrade:.*?\*\*\s*$": f"**{module_name.title() if module_name else 'Module Scope'}**" if module_name else "**Module Scope**",
+        r"(?im)^\*\*environment readiness assessment\*\*\s*$": "**Implementation Scope**",
+        r"(?im)^\*\*upgrade analysis\*\*\s*$": "**Functional Coverage**",
+        r"(?im)^\*\*core technical upgrade\*\*\s*$": "**Configuration & Processing**",
+        r"(?im)^\*\*customization\s*&\s*interface retrofit\*\*\s*$": "**Interfaces & Controls**",
+        r"(?im)^\*\*testing\*\*\s*$": "**Testing & Handover**",
+        r"(?im)^\*\*deployment\s*&\s*go-live\*\*\s*$": "**Testing & Handover**",
+        r"(?im)^\*\*post go-live support\*\*\s*$": "**Testing & Handover**",
+    }
+    rewritten = cleaned
+    for pattern, replacement in replacements.items():
+        rewritten = re.sub(pattern, replacement, rewritten)
+    lines = [line.rstrip() for line in rewritten.splitlines()]
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for line in lines:
+        marker = _clean(re.sub(r"[*_#`]+", "", line)).lower()
+        if marker in {heading.lower() for heading in _MODULE_SCOPE_HEADINGS}:
+            if marker in seen:
+                continue
+            seen.add(marker)
+        deduped.append(line)
+    return "\n".join(deduped).strip()
 
 
 def _looks_like_meta_output(text: str) -> bool:

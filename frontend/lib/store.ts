@@ -106,7 +106,7 @@ const defaultQuality: ProposalQualitySettings = {
   top_k: 10,
 };
 
-const defaultModel = "openrouter/free";
+const defaultModel = "groq/openai/gpt-oss-20b";
 
 function move<T extends { id: string }>(arr: T[], id: string, dir: -1 | 1): T[] {
   const idx = arr.findIndex((x) => x.id === id);

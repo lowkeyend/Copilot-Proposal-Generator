@@ -219,7 +219,7 @@ export function SectionCard({
                   <Badge tone="muted">{section.evidence.length} sources</Badge>
                 )}
                 {section.model && (
-                  <Badge tone="muted">{section.model.split("/").pop()}</Badge>
+                  <Badge tone="muted">{section.model}</Badge>
                 )}
               </div>
             </div>

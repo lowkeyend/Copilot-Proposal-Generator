@@ -113,7 +113,7 @@ export default function SettingsPage() {
         gemini_api_key_set: Boolean(geminiKey.trim()),
         grok_api_key_set: Boolean(groqKey.trim()),
         source: result.source === "request" ? "runtime" : result.source,
-        default_model: result.model || "openrouter/free",
+        default_model: result.model || "groq/openai/gpt-oss-20b",
         models: models.length ? models : [result.model].filter(Boolean),
       });
     } catch (err) {

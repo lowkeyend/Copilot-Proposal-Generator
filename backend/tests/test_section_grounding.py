@@ -600,3 +600,6 @@ def test_adapt_section_uses_grounded_rewrite_for_module_scope(monkeypatch) -> No
     assert "Forex capability" in result.section.content
     assert "like-for-like technical upgrade" not in result.section.content.lower()
     assert "Environment Readiness Assessment" not in result.section.content
+    assert "deployment support" not in result.section.content.lower()
+    assert "cutover preparation" not in result.section.content.lower()
+    assert "go-live" not in result.section.content.lower()

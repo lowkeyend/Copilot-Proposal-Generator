@@ -224,12 +224,12 @@ export default function WorkspacePage() {
   const [documentOptions, setDocumentOptions] = useState<string[]>([]);
   const [masterPrompt, setMasterPrompt] = useState(store.prompt);
   const [models] = useState([
+    "groq/openai/gpt-oss-20b",
     "openrouter/free",
     "qwen/qwen3-next-80b-a3b-instruct:free",
     "deepseek/deepseek-chat-v3.1:free",
     "qwen/qwen3-32b",
     "deepseek/deepseek-chat",
-    "groq/openai/gpt-oss-20b",
     "groq/qwen/qwen3-32b",
   ]);
 

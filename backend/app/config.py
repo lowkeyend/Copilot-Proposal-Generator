@@ -33,7 +33,7 @@ class Settings(BaseSettings):
         default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL"
     )
     default_model: str = Field(
-        default="openrouter/free",
+        default="groq/openai/gpt-oss-20b",
         alias="DEFAULT_MODEL",
     )
     openrouter_app_url: str = Field(
@@ -109,8 +109,8 @@ class Settings(BaseSettings):
     @property
     def preferred_default_model(self) -> str:
         legacy_paid_defaults = {"deepseek/deepseek-chat", "qwen/qwen3-32b"}
-        if self.default_model in legacy_paid_defaults and "openrouter/free" in self.supported_models:
-            return "openrouter/free"
+        if self.default_model in legacy_paid_defaults and "groq/openai/gpt-oss-20b" in self.supported_models:
+            return "groq/openai/gpt-oss-20b"
         if self.default_model in self.supported_models:
             return self.default_model
         if self.supported_models:

@@ -566,7 +566,7 @@ class OpenRouterSettingsStatus(BaseModel):
     gemini_api_key_set: bool = False
     grok_api_key_set: bool = False
     source: Literal["runtime", "env", "none"] = "none"
-    default_model: str = "openrouter/free"
+    default_model: str = "groq/openai/gpt-oss-20b"
     models: list[str] = Field(default_factory=list)
 
 
