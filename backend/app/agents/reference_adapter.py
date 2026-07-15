@@ -159,6 +159,11 @@ def _normalized_words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", (text or "").lower())
 
 
+def _support_terms(text: str) -> set[str]:
+    tokens = set(_normalized_words(text))
+    return {token for token in tokens if len(token) >= 4}
+
+
 def _reference_client_candidates(text: str) -> list[str]:
     found: list[str] = []
     corpus = text or ""
@@ -748,6 +753,10 @@ def _evidence_snapshot(evidence_lines: list[str], limit: int = 18) -> str:
     return chr(10).join(f"- {item}" for item in evidence_lines[:limit]) or "- none"
 
 
+def _split_sentences(text: str) -> list[str]:
+    return [part.strip() for part in re.split(r"(?<=[.!?])\s+", text or "") if part.strip()]
+
+
 def _section_kind(section_title: str) -> str:
     title = _clean(section_title).lower()
     if "scope" in title:
@@ -795,6 +804,48 @@ def _filtered_context_facts(req: AdaptSectionRequest, evidence_lines: list[str])
             ]
         )
     return [item for item in facts if item]
+
+
+def _grounding_context_terms_for_adaptation(req: AdaptSectionRequest) -> set[str]:
+    context_parts = [
+        req.context.client_name or "",
+        req.context.industry or "",
+        req.context.canonical_product or "",
+        req.context.client_profile or "",
+    ]
+    return _support_terms(" ".join(context_parts))
+
+
+def _grounding_evidence_terms_for_adaptation(evidence_lines: list[str]) -> set[str]:
+    terms: set[str] = set()
+    for line in evidence_lines:
+        terms.update(_support_terms(line))
+    return terms
+
+
+def _prune_unsupported_adaptation_sentences(
+    content: str,
+    req: AdaptSectionRequest,
+    evidence_lines: list[str],
+) -> str:
+    evidence_terms = _grounding_evidence_terms_for_adaptation(evidence_lines)
+    context_terms = _grounding_context_terms_for_adaptation(req)
+    paragraphs = [part.strip() for part in re.split(r"\n{2,}", content or "") if part.strip()]
+    kept_paragraphs: list[str] = []
+    for paragraph in paragraphs:
+        if paragraph.lstrip().startswith(("#", "-", "*")):
+            kept_paragraphs.append(paragraph)
+            continue
+        kept_sentences: list[str] = []
+        for sentence in _split_sentences(paragraph):
+            sentence_terms = _support_terms(sentence)
+            evidence_overlap = len(sentence_terms & evidence_terms)
+            context_overlap = len(sentence_terms & context_terms)
+            if len(sentence_terms) < 4 or evidence_overlap + context_overlap >= 2:
+                kept_sentences.append(sentence)
+        if kept_sentences:
+            kept_paragraphs.append(" ".join(kept_sentences))
+    return "\n\n".join(kept_paragraphs).strip()
 
 
 def _section_contract(req: AdaptSectionRequest) -> str:
@@ -1031,7 +1082,8 @@ def _sanitize_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief, 
                 break
         if not blocked:
             kept.append(sentence)
-    return _clean(" ".join(kept) or cleaned)
+    grounded = _clean(" ".join(kept) or cleaned)
+    return _prune_unsupported_adaptation_sentences(grounded, req, evidence_lines)
 
 
 def _looks_like_meta_output(text: str) -> bool:
