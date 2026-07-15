@@ -20,6 +20,11 @@ _COMMENTARY_MARKERS = (
     "questionnaire context",
     "this section",
     "the proposal should",
+    "we need to write",
+    "must not mention",
+    "evidence includes",
+    "we can derive",
+    "let's craft",
 )
 
 _MARKETING_PHRASES = (
@@ -1029,9 +1034,30 @@ def _sanitize_output(text: str, req: AdaptSectionRequest, brief: ProposalBrief, 
     return _clean(" ".join(kept) or cleaned)
 
 
+def _looks_like_meta_output(text: str) -> bool:
+    lowered = _clean(text).lower()
+    if not lowered:
+        return True
+    markers = (
+        "we need to write",
+        "must not mention",
+        "must not repeat",
+        "evidence includes",
+        "we can derive",
+        "let's craft",
+        "so start directly",
+        "thus we can",
+        "the instruction",
+        "we should",
+    )
+    return any(marker in lowered for marker in markers)
+
+
 def _needs_retry(content: str, req: AdaptSectionRequest) -> bool:
     cleaned = _clean(content)
     if not cleaned:
+        return True
+    if _looks_like_meta_output(cleaned):
         return True
     client_name = _clean(req.context.client_name)
     if client_name and client_name.lower() not in cleaned.lower():
@@ -1064,6 +1090,9 @@ You must:
 - keep the reference structure and professional proposal tone;
 - avoid commentary and unsupported claims;
 - make real edits where the prompt requires edits.
+- do not return notes about what you are going to write;
+- do not mention evidence, instructions, constraints, or writing decisions;
+- return only the final client-ready section body.
 
 MASTER PROMPT
 {req.prompt or "(none)"}
@@ -1135,6 +1164,8 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
 
     if _is_major_scope_shift(effective_req):
         content = await _grounded_scope_rewrite(effective_req, brief, evidence_lines)
+        if _looks_like_meta_output(content):
+            content = await _retry_adaptation(effective_req, brief, evidence_lines, content)
         content = _sanitize_output(content, effective_req, brief, evidence_lines)
         notes = _validate_output(content, effective_req, brief)
         section = SectionResult(
