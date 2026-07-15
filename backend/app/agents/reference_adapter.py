@@ -926,6 +926,63 @@ def _normalize_section_format(text: str) -> str:
     return formatted.strip()
 
 
+async def _extract_structured_facts(
+    req: AdaptSectionRequest,
+    evidence_lines: list[str],
+) -> list[str]:
+    if not evidence_lines:
+        return []
+    prompt = f"""
+Return strict JSON only in this shape:
+{{
+  "facts": ["string"]
+}}
+
+Extract only concrete proposal facts relevant to this section.
+
+SECTION TITLE
+{req.section_title}
+
+MASTER PROMPT
+{req.prompt or "(none)"}
+
+SECTION INSTRUCTION
+{req.instruction or "(none)"}
+
+CLIENT FACTS
+{chr(10).join(f"- {item}" for item in _filtered_context_facts(req, evidence_lines)) or "- none"}
+
+RAW EVIDENCE
+{_evidence_snapshot(evidence_lines, 20)}
+
+Rules:
+- Extract only facts explicitly supported by the raw evidence.
+- Prefer versions, modules, environments, interfaces, controls, activities, testing items, deliverables, reports, and counts.
+- Do not include inferred benefits, generic governance, sales language, or unsupported delivery claims.
+- Keep each fact short and specific.
+- Return at most 16 facts.
+"""
+    try:
+        data = await get_llm().chat_json(
+            [
+                {"role": "system", "content": "You extract grounded proposal facts only."},
+                {"role": "user", "content": prompt},
+            ],
+            model=req.model,
+            temperature=0.0,
+            max_tokens=700,
+        )
+        facts = data.get("facts", []) if isinstance(data, dict) else []
+        cleaned: list[str] = []
+        for item in facts:
+            text = _clean(str(item))
+            if text and text not in cleaned:
+                cleaned.append(text)
+        return cleaned[:16]
+    except Exception:
+        return []
+
+
 def _section_contract(req: AdaptSectionRequest) -> str:
     kind = _section_kind(req.section_title)
     if kind == "scope":
@@ -981,6 +1038,7 @@ async def _grounded_scope_rewrite(
     evidence_lines: list[str],
 ) -> str:
     context_facts = _filtered_context_facts(req, evidence_lines)
+    structured_facts = await _extract_structured_facts(req, evidence_lines)
     prompt = f"""
 Write a submission-ready proposal section using only the retrieved evidence and explicit client context.
 
@@ -1002,12 +1060,15 @@ REFERENCE SECTION
 CHANGE PLAN
 {chr(10).join(f"- {item}" for item in brief.must_change[:12]) or "- Apply only explicit prompt changes."}
 
+STRUCTURED FACTS (the only facts you may use)
+{chr(10).join(f"- {item}" for item in structured_facts) or "- none"}
+
 SUPPORTED EVIDENCE
 {_evidence_snapshot(evidence_lines, 24)}
 
 Rules:
 - This is a fresh grounded rewrite, not a patch.
-- Use only facts that are explicitly supported in the SUPPORTED EVIDENCE block or explicit client context.
+- Use only facts that are explicitly supported in the STRUCTURED FACTS block or explicit client context.
 - Do not repeat the section title at the start of the answer.
 - If the prompt requests a module implementation or scope addition, do not preserve upgrade-only headings such as Environment Readiness Assessment, Core Technical Upgrade, or Post Go-Live Support unless the evidence explicitly supports them for this section.
 - Do not mention release-to-release upgrade wording unless the prompt explicitly asks for an upgrade and the evidence supports it.
@@ -1021,7 +1082,7 @@ Rules:
 - Do not mention source documents, evidence, chunk names, or reasoning.
 - Do not output HTML or XML tags.
 - Do not invent benefits, governance, timelines, testing cycles, or technical steps that are not directly supported.
-- If the evidence supports module capabilities, implementation scope, interfaces, controls, deliverables, or operating coverage, use those facts directly in polished proposal language.
+- If a point is not present in STRUCTURED FACTS, omit it.
 {_section_contract(req)}
 
 Return final proposal content only.
