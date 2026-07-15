@@ -983,6 +983,93 @@ Rules:
         return []
 
 
+async def _extract_section_schema(
+    req: AdaptSectionRequest,
+    evidence_lines: list[str],
+) -> dict[str, object]:
+    if not evidence_lines:
+        return {}
+    kind = _section_kind(req.section_title)
+    if kind == "scope":
+        shape = """
+{
+  "objective": "string",
+  "upgrade_path": "string",
+  "activities": ["string"],
+  "interfaces": ["string"],
+  "controls": ["string"],
+  "testing": ["string"],
+  "deliverables": ["string"]
+}
+"""
+    elif kind == "solution":
+        shape = """
+{
+  "objective": "string",
+  "capabilities": ["string"],
+  "interfaces": ["string"],
+  "controls": ["string"],
+  "environments": ["string"],
+  "reports": ["string"]
+}
+"""
+    elif kind == "executive_summary":
+        shape = """
+{
+  "objective": "string",
+  "upgrade_path": "string",
+  "scope_summary": ["string"],
+  "delivery_summary": ["string"]
+}
+"""
+    else:
+        shape = """
+{
+  "objective": "string",
+  "facts": ["string"]
+}
+"""
+    prompt = f"""
+Return strict JSON only matching this shape:
+{shape}
+
+Populate the fields only with facts explicitly supported by the evidence.
+
+SECTION TITLE
+{req.section_title}
+
+MASTER PROMPT
+{req.prompt or "(none)"}
+
+SECTION INSTRUCTION
+{req.instruction or "(none)"}
+
+CLIENT FACTS
+{chr(10).join(f"- {item}" for item in _filtered_context_facts(req, evidence_lines)) or "- none"}
+
+RAW EVIDENCE
+{_evidence_snapshot(evidence_lines, 20)}
+
+Rules:
+- Keep every field concise and factual.
+- Leave fields empty rather than inventing.
+- Do not include benefits, sales claims, or unsupported governance/process wording.
+"""
+    try:
+        data = await get_llm().chat_json(
+            [
+                {"role": "system", "content": "You extract strict grounded section schemas only."},
+                {"role": "user", "content": prompt},
+            ],
+            model=req.model,
+            temperature=0.0,
+            max_tokens=900,
+        )
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
 def _section_contract(req: AdaptSectionRequest) -> str:
     kind = _section_kind(req.section_title)
     if kind == "scope":
@@ -1039,6 +1126,7 @@ async def _grounded_scope_rewrite(
 ) -> str:
     context_facts = _filtered_context_facts(req, evidence_lines)
     structured_facts = await _extract_structured_facts(req, evidence_lines)
+    section_schema = await _extract_section_schema(req, evidence_lines)
     prompt = f"""
 Write a submission-ready proposal section using only the retrieved evidence and explicit client context.
 
@@ -1063,12 +1151,16 @@ CHANGE PLAN
 STRUCTURED FACTS (the only facts you may use)
 {chr(10).join(f"- {item}" for item in structured_facts) or "- none"}
 
+SECTION SCHEMA (preferred fact structure)
+{section_schema or {"objective": "", "facts": []}}
+
 SUPPORTED EVIDENCE
 {_evidence_snapshot(evidence_lines, 24)}
 
 Rules:
 - This is a fresh grounded rewrite, not a patch.
 - Use only facts that are explicitly supported in the STRUCTURED FACTS block or explicit client context.
+- Use SECTION SCHEMA as the preferred structure for what to include and how to group it.
 - Do not repeat the section title at the start of the answer.
 - If the prompt requests a module implementation or scope addition, do not preserve upgrade-only headings such as Environment Readiness Assessment, Core Technical Upgrade, or Post Go-Live Support unless the evidence explicitly supports them for this section.
 - Do not mention release-to-release upgrade wording unless the prompt explicitly asks for an upgrade and the evidence supports it.
@@ -1083,6 +1175,7 @@ Rules:
 - Do not output HTML or XML tags.
 - Do not invent benefits, governance, timelines, testing cycles, or technical steps that are not directly supported.
 - If a point is not present in STRUCTURED FACTS, omit it.
+ - If a field in SECTION SCHEMA is empty, omit it.
 {_section_contract(req)}
 
 Return final proposal content only.
