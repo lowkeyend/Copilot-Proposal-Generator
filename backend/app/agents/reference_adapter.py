@@ -15,6 +15,7 @@ from app.models.schemas import (
 from app.services.llm_service import LLMError, get_llm
 
 _COMMENTARY_MARKERS = (
+    "user safety:",
     "the section should",
     "the final wording should",
     "questionnaire context",
@@ -1091,6 +1092,7 @@ def _looks_like_meta_output(text: str) -> bool:
     if not lowered:
         return True
     markers = (
+        "user safety:",
         "we need to write",
         "must not mention",
         "must not repeat",
