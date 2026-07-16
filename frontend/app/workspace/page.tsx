@@ -397,33 +397,45 @@ export default function WorkspacePage() {
       const existing = store.sections.find((item) => item.id === sectionId);
       const referenceNode = referenceSections.get(sectionId);
       const toc = store.toc.find((item) => item.id === sectionId);
-      const res = await api.adaptSection({
-        section_title: existing?.title || referenceNode?.title || toc?.title || "Section",
-        reference_content: referenceNode ? templateBody(referenceNode) : existing?.content || "",
-        reference_blocks: referenceNode ? sectionBlocks(selectedTemplate, referenceNode) : existing?.blocks || [],
+      const title = existing?.title || referenceNode?.title || toc?.title || "Section";
+      const derivedKeywords = Array.from(
+        new Set(
+          [
+            ...(toc?.keywords || []),
+            ...((referenceNode?.subsections || []).map((item) => item.title)),
+            title,
+          ].filter(Boolean)
+        )
+      );
+      const res = await api.generateSection({
+        section_title: title,
+        keywords: derivedKeywords,
         context: store.context,
         proposal_family: store.proposalFamily,
         prompt: store.prompt,
+        pattern_guidance: referenceNode
+          ? `Match the structure and tone of the selected template section '${referenceNode.title}'.`
+          : toc?.description || "",
         instruction,
         model: store.model,
         top_k: store.quality.top_k,
         include_temenos_official: store.quality.include_temenos_official,
         use_hybrid_retrieval: store.quality.use_hybrid_retrieval,
         require_evidence: store.quality.require_evidence,
-        reference_headings: (referenceNode?.subsections || []).map((item) => item.title),
+        detail_level: store.quality.detail_level,
       });
       store.upsertSection({
-        ...res.section,
+        ...res,
         id: sectionId,
         images:
-          (res.section.blocks || [])
+          (res.blocks || [])
             .filter((block) => block.kind === "image" && block.image)
             .map((block) => block.image!)
             .filter(Boolean) || existing?.images || [],
         locked: existing?.locked || false,
       });
     } catch (e: any) {
-      setError(e.message || "Section adaptation failed.");
+      setError(e.message || "Section generation failed.");
     } finally {
       setBusySection(null);
     }
