@@ -346,11 +346,32 @@ def _apply_evidence_line_overrides(content: str, req: AdaptSectionRequest, evide
 
 
 def _should_use_patch_only(req: AdaptSectionRequest) -> bool:
-    combined = f"{req.prompt or ''} {req.instruction or ''}".lower()
+    combined = _clean(f"{req.prompt or ''} {req.instruction or ''}").lower()
     if not combined.strip():
         return True
+    substantive_markers = (
+        "based only on the selected",
+        "use only the selected",
+        "client-ready",
+        "submission-ready",
+        "operational tone",
+        "implementation-focused",
+        "factual",
+        "do not add unsupported",
+        "do not frame this as",
+        "replace the reference client name",
+        "replace the client name",
+        "align the version context",
+        "frame the engagement as",
+        "position the solution as",
+        "focus on",
+    )
+    if any(marker in combined for marker in substantive_markers):
+        return False
+    if getattr(req.context, "selected_documents", None) and len(combined.split()) >= 12:
+        return False
     if "preserve the reference structure" in combined or "preserve the reference structure and wording style" in combined:
-        return True
+        return False
     return not any(word in combined for word in _PATCH_TRIGGER_WORDS)
 
 

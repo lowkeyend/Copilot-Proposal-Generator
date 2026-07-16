@@ -403,6 +403,26 @@ def test_preserve_structure_prompt_stays_in_patch_mode() -> None:
         prompt="Prepare a technical upgrade proposal for QIB. Replace all reference client names with QIB, change the upgrade from R17 to R24, preserve the reference structure and wording style.",
     )
 
+    assert _should_use_patch_only(req) is False
+
+
+def test_short_minimal_prompt_can_still_use_patch_mode() -> None:
+    req = AdaptSectionRequest(
+        section_title="Scope of Work",
+        reference_content="## Core Upgrade: Temenos Transact R19 TAFJ to R26 TAFJ",
+        reference_blocks=[],
+        context=ClientContext(
+            client_name="QIB",
+            industry="Banking",
+            project_type="Technical Upgrade",
+            client_profile="established",
+            canonical_product="Temenos Transact",
+            intake=IntakeProfile(current_version="R19", target_version="R24"),
+        ),
+        proposal_family="Temenos",
+        prompt="Replace all reference client names with QIB.",
+    )
+
     assert _should_use_patch_only(req) is True
 
 
