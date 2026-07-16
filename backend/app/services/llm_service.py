@@ -61,6 +61,28 @@ class LLMService:
                 candidates.append(item)
         return candidates
 
+    def _extract_message_text(self, data: dict[str, Any]) -> str:
+        try:
+            message = data["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError) as exc:  # pragma: no cover
+            raise LLMError(f"Unexpected completion response shape: {data}") from exc
+        content = message.get("content", "")
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, dict):
+                    text = str(item.get("text", "") or item.get("content", "")).strip()
+                    if text:
+                        parts.append(text)
+                elif isinstance(item, str):
+                    if item.strip():
+                        parts.append(item.strip())
+            content = "\n".join(parts).strip()
+        text = str(content or "").strip()
+        text = re.sub(r"(?is)<think>.*?</think>", " ", text).strip()
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        return text
+
     async def chat(
         self,
         messages: list[dict[str, str]],
@@ -156,10 +178,10 @@ class LLMService:
                 errors.append(last_error)
             else:
                 raise LLMError(" | ".join(errors)[:1600] or "OpenRouter request failed.")
-        try:
-            return data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError) as exc:  # pragma: no cover
-            raise LLMError(f"Unexpected OpenRouter response shape: {data}") from exc
+        text = self._extract_message_text(data)
+        if not text:
+            raise LLMError(f"{self.resolve_model(model)} returned empty content after normalization.")
+        return text
 
     async def check(
         self,
@@ -206,7 +228,7 @@ class LLMService:
                         "detail": f"{resp.status_code}: {resp.text[:500]}",
                     }
                 data = resp.json()
-            content = data["choices"][0]["message"]["content"]
+            content = self._extract_message_text(data)
             return {
                 "ok": True,
                 "fallback": False,
