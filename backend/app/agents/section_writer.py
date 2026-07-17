@@ -1875,6 +1875,28 @@ async def _expand_via_llm(
     )
 
 
+async def _claim_grounding_issues(llm, req: GenerateSectionRequest, evidence: list[EvidenceChunk], content: str) -> list[str]:
+    """Check claims semantically instead of relying only on word overlap."""
+    try:
+        result = await llm.chat_json(
+            [
+                {"role": "system", "content": "You are a strict proposal fact checker. Return JSON only."},
+                {"role": "user", "content": (
+                    f"SECTION: {req.section_title}\nCLIENT: {req.context.client_name}\n\n"
+                    "EVIDENCE FACTS (the only permitted factual source):\n"
+                    f"{_format_evidence_facts(evidence, req)}\n\nDRAFT:\n{content}\n\n"
+                    'Return {"unsupported_claims": ["exact short claim", ...]}. '
+                    "List only material claims not explicitly supported by the evidence or client context. "
+                    "Do not flag normal grammatical synthesis or headings. Return an empty list when fully grounded."
+                )},
+            ], model=req.model, temperature=0.0, max_tokens=900
+        )
+        claims = result.get("unsupported_claims", []) if isinstance(result, dict) else []
+        return [f"unsupported claim: {str(item).strip()}" for item in claims if str(item).strip()][:8]
+    except Exception:
+        return []
+
+
 async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     title = req.section_title.lower()
     if any(term in title for term in ("company profile", "client profile", "about systems limited")):
@@ -1942,6 +1964,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     content = _replace_evidence_client_aliases(content, req, evidence)
     content = _prune_unsupported_sentences(content, req, evidence)
     issues = _validation_issues(content, req, evidence)
+    issues.extend(await _claim_grounding_issues(llm, req, evidence, content))
 
     if not issues and _should_expand(content, req):
         raw_content = await _expand_via_llm(
@@ -1955,6 +1978,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         content = _replace_evidence_client_aliases(content, req, evidence)
         content = _prune_unsupported_sentences(content, req, evidence)
         issues = _validation_issues(content, req, evidence)
+        issues.extend(await _claim_grounding_issues(llm, req, evidence, content))
 
     attempts = 0
     while issues and attempts < 2:
@@ -1970,6 +1994,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         content = _replace_evidence_client_aliases(content, req, evidence)
         content = _prune_unsupported_sentences(content, req, evidence)
         issues = _validation_issues(content, req, evidence)
+        issues.extend(await _claim_grounding_issues(llm, req, evidence, content))
         attempts += 1
 
     grounding_only = issues and all(
