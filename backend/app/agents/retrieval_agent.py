@@ -234,7 +234,11 @@ def _lexical_fallback(
             continue
         docs.append(
             (
-                {**norm, "point_id": str(payload.get("_point_id") or "")},
+                {
+                    **norm,
+                    "point_id": str(payload.get("_point_id") or ""),
+                    "chunk_index": int(payload.get("chunk_index", 0) or 0),
+                },
                 _token_list(haystack),
                 haystack,
             )
@@ -297,7 +301,7 @@ def _lexical_fallback(
                     source_document=norm["document"],
                     proposal_family=norm["family"],
                     chunk_id=norm["point_id"],
-                    chunk_index=int(payload.get("chunk_index", 0) or 0),
+                    chunk_index=norm["chunk_index"],
                     source_type="document_bm25",
                 ),
             )
