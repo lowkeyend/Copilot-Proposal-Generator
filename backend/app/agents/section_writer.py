@@ -87,6 +87,17 @@ _CONSULTING_PHRASES = (
     "fully integrated",
     "latest supported release",
 )
+_INFERRED_CONTRACT_PHRASES = (
+    "deliverables include",
+    "deliverables comprise",
+    "acceptance criteria",
+    "acceptance is achieved",
+    "out-of-scope",
+    "out of scope",
+    "the scope assumes",
+    "this scope assumes",
+    "will be considered complete",
+)
 _MODULE_SCOPE_HEADING_SCHEMA = [
     "Implementation Scope",
     "Functional Coverage",
@@ -1593,6 +1604,8 @@ def _prune_unsupported_sentences(
         for sentence in units:
             low_sentence = sentence.lower()
             if any(phrase in low_sentence and phrase not in evidence_text for phrase in _CONSULTING_PHRASES):
+                continue
+            if any(phrase in low_sentence and phrase not in evidence_text for phrase in _INFERRED_CONTRACT_PHRASES):
                 continue
             if _is_module_scope_request(req):
                 low = sentence.lower()
