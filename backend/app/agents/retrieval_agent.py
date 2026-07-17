@@ -499,4 +499,20 @@ def retrieve_for_section(
         key=lambda c: (_section_alignment_score(section_title, c), c.score),
         reverse=True,
     )
-    return chunks[: max(top_k, 8)]
+    # Qdrant Cloud can return the same payload more than once when dense and
+    # lexical results converge. Never send duplicate evidence to the writer.
+    unique: dict[str, EvidenceChunk] = {}
+    for chunk in chunks:
+        fingerprint = chunk.chunk_id or "|".join(
+            [
+                _normalize_document_name(chunk.source_document or chunk.source_proposal or ""),
+                _normalize_heading(chunk.source_section or ""),
+                re.sub(r"\s+", " ", (chunk.text or "").strip().lower()),
+            ]
+        )
+        if not fingerprint:
+            continue
+        previous = unique.get(fingerprint)
+        if previous is None or chunk.score > previous.score:
+            unique[fingerprint] = chunk
+    return list(unique.values())[: max(top_k, 8)]
