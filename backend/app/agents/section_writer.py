@@ -1510,8 +1510,15 @@ def _grounding_evidence_terms(
 def _prune_unsupported_sentences(
     content: str, req: GenerateSectionRequest, evidence: list[EvidenceChunk]
 ) -> str:
-    evidence_terms = _grounding_evidence_terms(req, evidence)
     context_terms = _grounding_context_terms(req)
+    evidence_term_sets = [
+        _support_terms(
+            " ".join(
+                [chunk.text or "", chunk.summary or "", chunk.source_section or ""]
+            )
+        )
+        for chunk in evidence
+    ]
     paragraphs = [part.strip() for part in re.split(r"\n{2,}", content or "") if part.strip()]
     kept_paragraphs: list[str] = []
     for paragraph in paragraphs:
@@ -1523,9 +1530,14 @@ def _prune_unsupported_sentences(
                 if any(phrase in low and phrase not in " ".join((_clean_phrase(chunk.text or "").lower() for chunk in evidence)) for phrase in _UNSUPPORTED_MODULE_SCOPE_PHRASES):
                     continue
             sentence_terms = _support_terms(sentence)
-            evidence_overlap = len(sentence_terms & evidence_terms)
+            evidence_overlap = max(
+                (len(sentence_terms & terms) for terms in evidence_term_sets),
+                default=0,
+            )
             context_overlap = len(sentence_terms & context_terms)
-            if len(sentence_terms) < 4 or evidence_overlap + context_overlap >= 2:
+            # A sentence must be supported by one concrete chunk. Global
+            # overlap across unrelated chunks is not sufficient grounding.
+            if len(sentence_terms) < 4 or evidence_overlap >= 2 or context_overlap >= 2:
                 kept_sentences.append(sentence)
         if kept_sentences:
             kept_paragraphs.append("\n".join(kept_sentences) if paragraph.lstrip().startswith(("#", "-", "*")) else " ".join(kept_sentences))
@@ -1706,6 +1718,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     )
     content = _clean_model_output(raw_content, req.section_title)
     content = _apply_context_guardrails(content, req)
+    content = _prune_unsupported_sentences(content, req, evidence)
     issues = _validation_issues(content, req, evidence)
 
     if not issues and _should_expand(content, req):
@@ -1717,6 +1730,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         )
         content = _clean_model_output(raw_content, req.section_title)
         content = _apply_context_guardrails(content, req)
+        content = _prune_unsupported_sentences(content, req, evidence)
         issues = _validation_issues(content, req, evidence)
 
     attempts = 0
@@ -1730,6 +1744,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         )
         content = _clean_model_output(raw_content, req.section_title)
         content = _apply_context_guardrails(content, req)
+        content = _prune_unsupported_sentences(content, req, evidence)
         issues = _validation_issues(content, req, evidence)
         attempts += 1
 

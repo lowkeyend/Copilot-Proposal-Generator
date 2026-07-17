@@ -503,7 +503,7 @@ def retrieve_for_section(
     # lexical results converge. Never send duplicate evidence to the writer.
     unique: dict[str, EvidenceChunk] = {}
     for chunk in chunks:
-        fingerprint = chunk.chunk_id or "|".join(
+        fingerprint = "|".join(
             [
                 _normalize_document_name(chunk.source_document or chunk.source_proposal or ""),
                 _normalize_heading(chunk.source_section or ""),
