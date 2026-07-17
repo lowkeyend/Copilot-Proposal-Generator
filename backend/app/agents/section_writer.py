@@ -438,6 +438,9 @@ def _reference_section_schema(req: GenerateSectionRequest) -> str:
 
 
 def _reference_lock_allowed(req: GenerateSectionRequest) -> bool:
+    return False
+    """Deprecated source-copy path; generation always uses the LLM."""
+    """
     if not req.require_evidence or not req.context.selected_documents:
         return False
     if req.instruction:
@@ -454,6 +457,7 @@ def _reference_lock_allowed(req: GenerateSectionRequest) -> bool:
         if not re.search(r"(?:not|no|without)\s*$", prefix):
             return False
     return True
+    """
 
 
 def _reference_locked_content(req: GenerateSectionRequest, evidence: list[EvidenceChunk]) -> str:
