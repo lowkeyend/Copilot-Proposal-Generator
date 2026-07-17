@@ -86,6 +86,12 @@ _CONSULTING_PHRASES = (
     "seamless customer experience",
     "fully integrated",
     "latest supported release",
+    "guarantee system",
+    "guarantees alignment",
+    "continuous improvement",
+    "regulatory obligations",
+    "agreed performance parameters",
+    "fully functional digital wallet solution",
 )
 _INFERRED_CONTRACT_PHRASES = (
     "deliverables include",
