@@ -422,6 +422,17 @@ def retrieve_for_section(
         context.intake.questionnaire_notes,
     ]
     query = " ".join(p for p in query_parts if p).strip()
+    section_query = " ".join(
+        p
+        for p in [
+            section_title,
+            " ".join(_section_alias_terms(section_title)),
+            " ".join(keywords or []),
+            prompt,
+            instruction,
+        ]
+        if p
+    ).strip()
 
     chunks: list[EvidenceChunk] = []
     try:
@@ -440,7 +451,7 @@ def retrieve_for_section(
     if use_hybrid_retrieval or not chunks:
         lexical = _lexical_fallback(
             qdrant=qdrant,
-            query=query,
+            query=section_query,
             section_title=section_title,
             keywords=keywords,
             proposal_family=proposal_family,
@@ -464,7 +475,7 @@ def retrieve_for_section(
     if selected_documents and len(chunks) < max(3, min(top_k, 6)):
         targeted = _lexical_fallback(
             qdrant=qdrant,
-            query=query,
+            query=section_query,
             section_title=section_title,
             keywords=keywords,
             proposal_family=proposal_family,
