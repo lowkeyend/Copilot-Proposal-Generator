@@ -372,45 +372,56 @@ class KnowledgeIngestService:
         source_section: str,
         proposal_family: str,
     ) -> tuple[list[str], int]:
-        parsed = await self.parse_files(files)
-        if not parsed:
-            raise RuntimeError("No readable content found in the uploaded files.")
-
         qdrant = get_qdrant()
-        points = []
         filenames: list[str] = []
+        total_points = 0
 
-        for doc in parsed:
-            filenames.append(doc.filename)
+        # Flush each upload in small batches so large DOCX files do not exhaust
+        # the memory available on a hosted backend.
+        for file in files:
+            name = file.filename or "document"
+            data = await _read_upload(file)
+            text = _extract_text(name, data)
+            if not text:
+                continue
+            filenames.append(name)
+            image_paths = _extract_docx_images(name, data) if name.lower().endswith(".docx") else []
             chunks = (
-                _chunk_docx_document(doc.filename, doc.raw_bytes)
-                if doc.filename.lower().endswith(".docx")
-                else _chunk_generic_document(doc.filename, doc.text)
+                _chunk_docx_document(name, data)
+                if name.lower().endswith(".docx")
+                else _chunk_generic_document(name, text)
             )
+            batch = []
             for index, chunk in enumerate(chunks, start=1):
                 payload = {
                     "text": chunk.text,
                     "chunk_text": chunk.text,
                     "chunk_summary": chunk.summary,
-                    "source_proposal": source_proposal or doc.filename,
+                    "source_proposal": source_proposal or name,
                     "source_section": source_section or chunk.section or f"Upload chunk {index}",
                     "proposal_family": proposal_family or "Uploaded Knowledge",
-                    "file": doc.filename,
-                    "document_name": doc.filename,
+                    "file": name,
+                    "document_name": name,
                     "section": source_section or chunk.section or f"Upload chunk {index}",
-                    "image_paths": doc.image_paths,
+                    "image_paths": image_paths,
                 }
-                points.append(
+                batch.append(
                     qdrant.build_point(
                         chunk_id=uuid4().hex,
                         text=chunk.text,
                         payload=payload,
                     )
                 )
-
-        for batch in _batched(points, size=16):
-            qdrant.upsert_points(batch)
-        return filenames, len(points)
+                if len(batch) >= 8:
+                    qdrant.upsert_points(batch)
+                    total_points += len(batch)
+                    batch = []
+            if batch:
+                qdrant.upsert_points(batch)
+                total_points += len(batch)
+        if not filenames:
+            raise RuntimeError("No readable content found in the uploaded files.")
+        return filenames, total_points
 
 
 _ingest_singleton: KnowledgeIngestService | None = None
