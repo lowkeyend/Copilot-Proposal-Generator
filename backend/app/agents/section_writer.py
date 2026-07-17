@@ -1208,7 +1208,7 @@ def _replace_evidence_client_aliases(
     for chunk in evidence:
         for source in (chunk.source_document, chunk.source_proposal):
             for acronym in re.findall(r"\b[A-Z][A-Z0-9]{2,}\b", source or ""):
-                if acronym not in {"DOCX", "PDF", "SOW", "RFP", "SYS"}:
+                if acronym not in {"DOCX", "PDF", "SOW", "RFP", "SYS", "PKMB", "QIB"}:
                     aliases.add(acronym)
         for match in re.finditer(
             r"\b(?:[A-Z][A-Za-z0-9&.'-]*\s+){1,4}(?:Islamic\s+)?Bank(?:\s+(?:Pakistan|Limited|Ltd))?\b",
