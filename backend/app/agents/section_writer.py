@@ -320,6 +320,13 @@ def _section_style_guide(req: GenerateSectionRequest) -> str:
                 "- Do not reuse upgrade-specific headings such as Environment Readiness Assessment, Upgrade Analysis, Core Technical Upgrade, Deployment & Go-Live, or Post Go-Live Support.\n"
                 "- Prefer precise operational wording over broad capability summaries."
             )
+        if getattr(req.context.intake, "project_mode", "") == "implementation":
+            return (
+                "- Write as a contractual implementation scope, not an upgrade scope.\n"
+                "- Use only work packages, products, interfaces, testing, deployment, handover, and support activities explicitly present in the evidence.\n"
+                "- Do not create upgrade headings, release comparisons, or generic assumptions.\n"
+                "- Preserve the source document's operational sequence and named deliverables."
+            )
         return (
             "- Write in a contractual implementation style, not a consulting style.\n"
             "- Preserve the source section structure where supported, including specific workstream headings and activity lists.\n"
@@ -384,6 +391,12 @@ def _section_boundary_rules(req: GenerateSectionRequest) -> str:
 
 
 def _reference_section_schema(req: GenerateSectionRequest) -> str:
+    if (
+        (req.section_title or "").strip().lower() == "scope of work"
+        and getattr(req.context.intake, "project_mode", "") == "implementation"
+        and not _is_module_scope_request(req)
+    ):
+        return "No fixed upgrade subheading schema is enforced; use only supported implementation workstream headings."
     if (req.section_title or "").strip().lower() == "scope of work" and _is_module_scope_request(req):
         return (
             "For module implementation scope sections, use this structure where the evidence supports it:\n- "
@@ -1035,6 +1048,11 @@ def _strip_leading_heading(content: str, section_title: str) -> str:
         lines = lines[1:]
         while lines and not lines[0].strip():
             lines = lines[1:]
+    if lines:
+        first = re.sub(r"[*_`:#]+", "", lines[0]).strip().rstrip(":").lower()
+        title = re.sub(r"[*_`:#]+", "", section_title).strip().rstrip(":").lower()
+        if first == title:
+            lines = lines[1:]
     return "\n".join(lines).strip()
 
 
@@ -1466,6 +1484,12 @@ def _validation_issues(
                 if phrase in lowered and phrase not in evidence_text:
                     issues.append(f"scope section contains unsupported module-implementation leakage: {phrase}")
     schema = _REFERENCE_SECTION_SCHEMAS.get((req.section_title or "").strip().lower())
+    if (
+        (req.section_title or "").strip().lower() == "scope of work"
+        and getattr(req.context.intake, "project_mode", "") == "implementation"
+        and not _is_module_scope_request(req)
+    ):
+        schema = None
     if (req.section_title or "").strip().lower() == "scope of work" and _is_module_scope_request(req):
         schema = {"subheadings": _MODULE_SCOPE_HEADING_SCHEMA, "minimum_matches": 2}
     if schema:
