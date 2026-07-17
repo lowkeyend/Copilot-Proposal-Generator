@@ -127,6 +127,13 @@ class LLMService:
                     "temperature": temperature,
                     "max_tokens": max_tokens,
                 }
+                # Groq's gpt-oss models can consume the entire completion
+                # budget with reasoning before emitting the answer. Keep
+                # reasoning internal and bounded so proposal calls always
+                # receive an actual proposal body.
+                if provider == "groq" and provider_model.startswith("openai/gpt-oss"):
+                    payload["reasoning_effort"] = "low"
+                    payload["include_reasoning"] = False
                 last_error = ""
                 for attempt in range(3):
                     try:
