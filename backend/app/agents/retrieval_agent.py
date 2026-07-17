@@ -49,6 +49,7 @@ _SECTION_ALIASES: dict[str, list[str]] = {
         "upgrade analysis",
         "core technical upgrade",
         "customization interface retrofit",
+        "testing",
         "deployment go live",
         "post go live support",
     ],
@@ -471,6 +472,27 @@ def retrieve_for_section(
             else:
                 by_id[key] = chunk
         chunks = list(by_id.values())
+
+        # Ensure long contractual sections receive one or more chunks from
+        # each known workstream instead of only the globally highest BM25
+        # matches. This is especially important for Scope of Work.
+        coverage_terms = _section_alias_terms(section_title)
+        if coverage_terms:
+            for coverage_term in coverage_terms:
+                covered = _lexical_fallback(
+                    qdrant=qdrant,
+                    query=coverage_term,
+                    section_title=coverage_term,
+                    keywords=[coverage_term],
+                    proposal_family=proposal_family,
+                    top_k=2,
+                    document_names=selected_documents,
+                )
+                for chunk in covered:
+                    key = chunk.chunk_id or f"coverage:{chunk.source_section}:{chunk.text[:120]}"
+                    if key not in by_id:
+                        by_id[key] = chunk
+            chunks = list(by_id.values())
 
     if selected_documents and len(chunks) < max(3, min(top_k, 6)):
         targeted = _lexical_fallback(
