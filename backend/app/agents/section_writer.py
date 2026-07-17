@@ -514,6 +514,15 @@ def _reference_locked_content(req: GenerateSectionRequest, evidence: list[Eviden
             text = (chunk.text or "").strip()
             if text:
                 key = (chunk.source_section or "Reference Evidence").strip() or "Reference Evidence"
+                blocked = {
+                    "document overview", "table of contents", "executive summary",
+                    "company profile", "company overview",
+                } if title == "scope of work" else {
+                    "document overview", "table of contents", "executive summary",
+                    "scope of work", "company profile", "company overview",
+                } if title == "proposed solution" else set()
+                if key.lower() in blocked:
+                    continue
                 groups.setdefault(key, [])
                 if text not in groups[key]:
                     groups[key].append(text)
@@ -1197,6 +1206,10 @@ def _replace_evidence_client_aliases(
         return content
     aliases: set[str] = set()
     for chunk in evidence:
+        for source in (chunk.source_document, chunk.source_proposal):
+            for acronym in re.findall(r"\b[A-Z][A-Z0-9]{2,}\b", source or ""):
+                if acronym not in {"DOCX", "PDF", "SOW", "RFP", "SYS"}:
+                    aliases.add(acronym)
         for match in re.finditer(
             r"\b(?:[A-Z][A-Za-z0-9&.'-]*\s+){1,4}(?:Islamic\s+)?Bank(?:\s+(?:Pakistan|Limited|Ltd))?\b",
             chunk.text or "",
