@@ -502,16 +502,24 @@ def _reference_locked_content(req: GenerateSectionRequest, evidence: list[Eviden
         text = (chunk.text or "").replace("\r\n", "\n").replace("\r", "\n")
         text = re.sub(r"[ \t]+", " ", text)
         text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        if title == "executive summary":
+            text = re.split(r"\n+Introduction\s*$", text, maxsplit=1, flags=re.IGNORECASE)[0].strip()
         if text and text not in groups.setdefault(key, []):
             groups[key].append(text)
     if not groups:
         return ""
     order = ["Executive Summary"] if title == "executive summary" else (scope_order if title == "scope of work" else solution_order)
     ordered: list[str] = []
+    display = {
+        "customization retrofit": "Customization & Interface Retrofit",
+        "customization interface retrofit": "Customization & Interface Retrofit",
+        "deployment go live": "Deployment & Go-Live",
+        "post go live support": "Post Go-Live Support",
+    }
     for item in order:
         key = item.title()
         if key in groups:
-            ordered.append(f"**{key}**\n" + "\n\n".join(groups[key]))
+            ordered.append(f"**{display.get(item, key)}**\n" + "\n\n".join(groups[key]))
     return "\n\n".join(ordered).strip()
 
 def _extract_fact_sentence(sentence: str, section_keywords: list[str]) -> str | None:
