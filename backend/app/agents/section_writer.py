@@ -509,7 +509,9 @@ def _reference_locked_content(req: GenerateSectionRequest, evidence: list[Eviden
             text = re.split(r"\n+Introduction\s*$", text, maxsplit=1, flags=re.IGNORECASE)[0].strip()
         if text and text not in groups.setdefault(key, []):
             groups[key].append(text)
-    if not groups:
+    # Do not return one coincidental matching block as the entire section when
+    # adapting a source document with a different heading vocabulary.
+    if not groups or (title != "executive summary" and len(groups) < 2):
         for _, chunk in ordered_evidence:
             text = (chunk.text or "").strip()
             if text:
