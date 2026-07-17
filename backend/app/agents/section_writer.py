@@ -487,7 +487,12 @@ def _reference_locked_content(req: GenerateSectionRequest, evidence: list[Eviden
             if not matched:
                 continue
             key = matched.title()
-        text = _clean_phrase(chunk.text or "")
+        # Preserve paragraph and list boundaries from the reference document;
+        # the ordinary phrase cleaner is for prompts and intentionally flattens
+        # whitespace, which is not suitable for document output.
+        text = (chunk.text or "").replace("\r\n", "\n").replace("\r", "\n")
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
         if text and text not in groups.setdefault(key, []):
             groups[key].append(text)
     if not groups:
