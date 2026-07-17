@@ -436,6 +436,70 @@ def _reference_section_schema(req: GenerateSectionRequest) -> str:
         + "\n- ".join(str(item) for item in subheadings)
     )
 
+
+def _reference_lock_allowed(req: GenerateSectionRequest) -> bool:
+    if not req.require_evidence or not req.context.selected_documents:
+        return False
+    if req.instruction or _is_module_scope_request(req):
+        return False
+    prompt = (req.prompt or "").lower()
+    # A structural rewrite is safe only when the request is a client/version
+    # remap. Substantive additions must continue through the LLM path.
+    return not any(token in prompt for token in (" add ", " include ", " rename ", " remove ", " introduce "))
+
+
+def _reference_locked_content(req: GenerateSectionRequest, evidence: list[EvidenceChunk]) -> str:
+    title = (req.section_title or "").strip().lower()
+    if title not in {"executive summary", "scope of work", "proposed solution"}:
+        return ""
+    scope_order = [
+        "core upgrade",
+        "environment readiness assessment",
+        "upgrade analysis",
+        "core technical upgrade",
+        "customization retrofit",
+        "customization interface retrofit",
+        "testing",
+        "deployment go live",
+        "post go live support",
+    ]
+    solution_order = [
+        "target solution principles",
+        "upgrade approach",
+        "environment assessment",
+        "upgrade execution",
+        "customization retrofit",
+        "testing validation",
+        "cutover stabilization",
+    ]
+    groups: dict[str, list[str]] = {}
+    for chunk in evidence:
+        section = _normalize_heading(chunk.source_section or "")
+        if not section:
+            continue
+        if title == "executive summary":
+            if "executive summary" not in section:
+                continue
+            key = "Executive Summary"
+        else:
+            order = scope_order if title == "scope of work" else solution_order
+            matched = next((item for item in order if item in section), None)
+            if not matched:
+                continue
+            key = matched.title()
+        text = _clean_phrase(chunk.text or "")
+        if text and text not in groups.setdefault(key, []):
+            groups[key].append(text)
+    if not groups:
+        return ""
+    order = ["Executive Summary"] if title == "executive summary" else (scope_order if title == "scope of work" else solution_order)
+    ordered: list[str] = []
+    for item in order:
+        key = item.title()
+        if key in groups:
+            ordered.append(f"**{key}**\n" + "\n\n".join(groups[key]))
+    return "\n\n".join(ordered).strip()
+
 def _extract_fact_sentence(sentence: str, section_keywords: list[str]) -> str | None:
     sentence = _clean_phrase(sentence)
     if not sentence:
@@ -1790,6 +1854,18 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
             evidence=[],
             model=get_llm().resolve_model(req.model),
         )
+
+    if _reference_lock_allowed(req):
+        locked_content = _reference_locked_content(req, evidence)
+        if locked_content:
+            locked_content = _apply_context_guardrails(locked_content, req)
+            locked_content = _replace_evidence_client_aliases(locked_content, req, evidence)
+            return SectionResult(
+                title=req.section_title,
+                content=locked_content,
+                evidence=evidence,
+                model=f"{get_llm().resolve_model(req.model)}:reference-locked",
+            )
 
     llm = get_llm()
     if not llm.available:
