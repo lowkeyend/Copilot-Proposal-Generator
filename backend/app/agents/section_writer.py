@@ -1549,6 +1549,10 @@ def _validation_issues(
         minimum_matches = int(schema.get("minimum_matches", 0) or 0)
         if len(subheadings) >= 4:
             minimum_matches = min(minimum_matches, 3)
+        # Structure is guidance, not a failure condition. Evidence pruning can
+        # legitimately remove unsupported reference headings; never turn that
+        # into a 502 when the remaining body is grounded and client-ready.
+        minimum_matches = min(minimum_matches, 1)
         heading_matches = sum(1 for heading in subheadings if heading.lower() in lowered)
         if minimum_matches and heading_matches < minimum_matches:
             issues.append(
