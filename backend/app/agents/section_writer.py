@@ -1079,6 +1079,29 @@ def _canonical_client_name(value: str) -> str:
     return cleaned
 
 
+def _replace_evidence_client_aliases(
+    content: str, req: GenerateSectionRequest, evidence: list[EvidenceChunk]
+) -> str:
+    """Replace client names copied from a reference document with the request client."""
+    target = _canonical_client_name(req.context.client_name or "")
+    if not target:
+        return content
+    aliases: set[str] = set()
+    for chunk in evidence:
+        for match in re.finditer(
+            r"\b(?:[A-Z][A-Za-z0-9&.'-]*\s+){1,4}(?:Islamic\s+)?Bank(?:\s+(?:Pakistan|Limited|Ltd))?\b",
+            chunk.text or "",
+        ):
+            alias = " ".join(match.group(0).split()).strip()
+            if alias.lower() not in {"the bank", "a bank", "the islamic bank"}:
+                aliases.add(alias)
+    result = content
+    for alias in sorted(aliases, key=len, reverse=True):
+        if alias.lower() != target.lower():
+            result = re.sub(rf"\b{re.escape(alias)}\b", target, result, flags=re.IGNORECASE)
+    return result
+
+
 def _intake_summary(context) -> str:
     intake = getattr(context, "intake", None)
     if not intake:
@@ -1215,6 +1238,13 @@ def _apply_context_guardrails(content: str, req: GenerateSectionRequest) -> str:
             r"\bTemenos\s+core\s+banking\s+platform\b",
         ):
             result = re.sub(alias, product, result, flags=re.IGNORECASE)
+    if getattr(req.context.intake, "implementation_methodology", ""):
+        result = re.sub(
+            r"\bTemenos\s+Integrated\s+Methodology\b",
+            "Temenos Implementation Methodology",
+            result,
+            flags=re.IGNORECASE,
+        )
 
     if _is_established_context(req):
         replacements = {
@@ -1757,6 +1787,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     )
     content = _clean_model_output(raw_content, req.section_title)
     content = _apply_context_guardrails(content, req)
+    content = _replace_evidence_client_aliases(content, req, evidence)
     content = _prune_unsupported_sentences(content, req, evidence)
     issues = _validation_issues(content, req, evidence)
 
@@ -1769,6 +1800,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         )
         content = _clean_model_output(raw_content, req.section_title)
         content = _apply_context_guardrails(content, req)
+        content = _replace_evidence_client_aliases(content, req, evidence)
         content = _prune_unsupported_sentences(content, req, evidence)
         issues = _validation_issues(content, req, evidence)
 
@@ -1783,6 +1815,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         )
         content = _clean_model_output(raw_content, req.section_title)
         content = _apply_context_guardrails(content, req)
+        content = _replace_evidence_client_aliases(content, req, evidence)
         content = _prune_unsupported_sentences(content, req, evidence)
         issues = _validation_issues(content, req, evidence)
         attempts += 1
