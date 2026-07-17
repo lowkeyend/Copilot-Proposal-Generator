@@ -474,7 +474,7 @@ def _reference_locked_content(req: GenerateSectionRequest, evidence: list[Eviden
     ]
     groups: dict[str, list[str]] = {}
     for chunk in evidence:
-        section = _normalize_heading(chunk.source_section or "")
+        section = _normalize_heading_key(chunk.source_section or "")
         if not section:
             continue
         if title == "executive summary":
