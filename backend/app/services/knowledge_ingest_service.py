@@ -185,7 +185,9 @@ def _extract_pdf(data: bytes) -> str:
     if PdfReader is None:
         raise RuntimeError("PDF support is unavailable because pypdf is not installed.")
     reader = PdfReader(io.BytesIO(data))
-    return _clean("\n".join(page.extract_text() or "" for page in reader.pages))
+    # Preserve page and line boundaries so headings, tables, and workstreams
+    # remain separable during section-aware chunking.
+    return _clean_multiline("\n\n".join(page.extract_text() or "" for page in reader.pages))
 
 
 def _extract_text(name: str, data: bytes) -> str:
