@@ -166,6 +166,10 @@ def _strict_section_filter(section_title: str, chunks: list[EvidenceChunk], prom
         *(_normalize_heading(term) for term in prompt_terms),
     }
     matched: list[EvidenceChunk] = []
+    # When ingestion provides a real section heading, treat it as authoritative.
+    # Searching the chunk body for a heading alias makes a Proposed Solution
+    # paragraph look like Scope of Work merely because it mentions "upgrade".
+    generic_heading = re.compile(r"^(upload|document|chunk|page|paragraph|section)\b", re.IGNORECASE)
     for chunk in chunks:
         heading = _normalize_heading(chunk.source_section or "")
         haystack = _normalize_heading(
@@ -179,19 +183,18 @@ def _strict_section_filter(section_title: str, chunks: list[EvidenceChunk], prom
                 ]
             )
         )
-        if not heading:
-            heading = haystack
-        if any(
-            item and (
-                item in heading
-                or heading in item
-                or item in haystack
-                or haystack in item
-            )
+        heading_is_generic = not heading or bool(generic_heading.match(chunk.source_section or ""))
+        heading_match = any(
+            item and (item in heading or heading in item)
             for item in allowed
-        ):
+        )
+        content_match = any(item and item in haystack for item in allowed)
+        if heading_match or (heading_is_generic and content_match):
             matched.append(chunk)
-    return matched or chunks
+    # Do not silently reintroduce unrelated sections when a section-aware
+    # corpus has no matching evidence. The caller can then stop in
+    # evidence-only mode instead of asking the model to bridge the gap.
+    return matched
 
 
 def _lexical_fallback(

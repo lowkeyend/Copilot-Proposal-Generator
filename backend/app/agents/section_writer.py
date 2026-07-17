@@ -1670,6 +1670,8 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         keywords=req.keywords,
         context=req.context,
         proposal_family=req.proposal_family,
+        prompt=req.prompt,
+        instruction=req.instruction,
         top_k=req.top_k,
         include_temenos_official=req.include_temenos_official,
         use_hybrid_retrieval=req.use_hybrid_retrieval,

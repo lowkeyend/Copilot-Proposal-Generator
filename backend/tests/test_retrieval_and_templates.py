@@ -253,6 +253,72 @@ def test_scope_retrieval_prefers_scope_headings(monkeypatch) -> None:
     assert any(chunk.source_section == "Environment Readiness Assessment" for chunk in chunks)
 
 
+def test_scope_retrieval_rejects_neighboring_proposed_solution_heading(monkeypatch) -> None:
+    class FakeQdrant:
+        def search_text(self, query_text: str, model: str, top_k: int = 6):
+            return []
+
+        def search(self, query_vector, top_k: int = 6, keywords=None):
+            return []
+
+        def scroll_payloads(self, limit: int = 5000):
+            return [
+                {
+                    "text": "The proposed solution includes the core upgrade, environment assessment, testing and cutover.",
+                    "section": "Proposed Solution",
+                    "source": "Reference.docx",
+                    "family": "Temenos",
+                    "document_name": "Reference.docx",
+                    "_point_id": "neighbor-1",
+                },
+                {
+                    "text": "The scope includes environment readiness assessment and upgrade analysis.",
+                    "section": "Environment Readiness Assessment",
+                    "source": "Reference.docx",
+                    "family": "Temenos",
+                    "document_name": "Reference.docx",
+                    "_point_id": "scope-1",
+                },
+            ]
+
+        @staticmethod
+        def normalize_payload(payload):
+            return {
+                "text": payload["text"],
+                "source": payload["source"],
+                "document": payload.get("document_name", ""),
+                "section": payload["section"],
+                "family": payload["family"],
+            }
+
+    fake_context = ClientContext(
+        client_name="Bank ABC",
+        industry="Banking",
+        client_profile="established",
+        canonical_product="Temenos Transact",
+        selected_documents=["Reference.docx"],
+        intake=IntakeProfile(),
+    )
+    monkeypatch.setattr("app.agents.retrieval_agent.get_qdrant", lambda: FakeQdrant())
+    monkeypatch.setattr(
+        "app.agents.retrieval_agent.get_settings",
+        lambda: SimpleNamespace(embedding_provider="qdrant", embedding_model="dummy"),
+    )
+
+    chunks = retrieve_for_section(
+        section_title="Scope of Work",
+        keywords=["scope", "upgrade"],
+        context=fake_context,
+        proposal_family="Temenos",
+        top_k=6,
+        include_temenos_official=False,
+        use_hybrid_retrieval=True,
+    )
+
+    assert chunks
+    assert all(chunk.source_section != "Proposed Solution" for chunk in chunks)
+
+
 def test_retrieval_uses_prompt_terms_for_module_specific_scope(monkeypatch) -> None:
     class FakeQdrant:
         def search_text(self, query_text: str, model: str, top_k: int = 6):
