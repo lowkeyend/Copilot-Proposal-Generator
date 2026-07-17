@@ -75,6 +75,17 @@ _CONSULTING_PHRASES = (
     "accelerated realization",
     "operating model",
     "target state",
+    "strategic objectives",
+    "strategic goals",
+    "future-ready",
+    "future ready",
+    "modernized platform",
+    "modernised platform",
+    "minimize disruption",
+    "minimise disruption",
+    "seamless customer experience",
+    "fully integrated",
+    "latest supported release",
 )
 _MODULE_SCOPE_HEADING_SCHEMA = [
     "Implementation Scope",
@@ -1535,6 +1546,7 @@ def _prune_unsupported_sentences(
     content: str, req: GenerateSectionRequest, evidence: list[EvidenceChunk]
 ) -> str:
     context_terms = _grounding_context_terms(req)
+    evidence_text = " ".join((chunk.text or "").lower() for chunk in evidence)
     evidence_term_sets = [
         _support_terms(
             " ".join(
@@ -1549,6 +1561,9 @@ def _prune_unsupported_sentences(
         units = [line.strip() for line in paragraph.splitlines() if line.strip()] if paragraph.lstrip().startswith(("#", "-", "*")) else _split_sentences(paragraph)
         kept_sentences: list[str] = []
         for sentence in units:
+            low_sentence = sentence.lower()
+            if any(phrase in low_sentence and phrase not in evidence_text for phrase in _CONSULTING_PHRASES):
+                continue
             if _is_module_scope_request(req):
                 low = sentence.lower()
                 if any(phrase in low and phrase not in " ".join((_clean_phrase(chunk.text or "").lower() for chunk in evidence)) for phrase in _UNSUPPORTED_MODULE_SCOPE_PHRASES):
@@ -1561,7 +1576,7 @@ def _prune_unsupported_sentences(
             context_overlap = len(sentence_terms & context_terms)
             # A sentence must be supported by one concrete chunk. Global
             # overlap across unrelated chunks is not sufficient grounding.
-            if len(sentence_terms) < 4 or evidence_overlap >= 2 or context_overlap >= 2:
+            if len(sentence_terms) < 4 or evidence_overlap >= 3 or context_overlap >= 2:
                 kept_sentences.append(sentence)
         if kept_sentences:
             kept_paragraphs.append("\n".join(kept_sentences) if paragraph.lstrip().startswith(("#", "-", "*")) else " ".join(kept_sentences))
