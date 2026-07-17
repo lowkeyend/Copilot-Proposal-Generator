@@ -258,6 +258,7 @@ class EvidenceChunk(BaseModel):
     source_document: str = ""
     proposal_family: str = ""
     chunk_id: str = ""
+    chunk_index: int = 0
     source_type: str = "document"
 
 

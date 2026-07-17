@@ -403,6 +403,7 @@ class KnowledgeIngestService:
                     "file": name,
                     "document_name": name,
                     "section": source_section or chunk.section or f"Upload chunk {index}",
+                    "chunk_index": index,
                     "image_paths": image_paths,
                 }
                 batch.append(

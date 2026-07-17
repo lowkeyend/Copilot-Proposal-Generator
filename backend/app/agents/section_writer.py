@@ -478,7 +478,11 @@ def _reference_locked_content(req: GenerateSectionRequest, evidence: list[Eviden
         "cutover stabilization",
     ]
     groups: dict[str, list[str]] = {}
-    for chunk in evidence:
+    ordered_evidence = sorted(
+        enumerate(evidence),
+        key=lambda item: (item[1].chunk_index <= 0, item[1].chunk_index or item[0]),
+    )
+    for _, chunk in ordered_evidence:
         section = _normalize_heading_key(chunk.source_section or "")
         if not section:
             continue

@@ -297,6 +297,7 @@ def _lexical_fallback(
                     source_document=norm["document"],
                     proposal_family=norm["family"],
                     chunk_id=norm["point_id"],
+                    chunk_index=int(payload.get("chunk_index", 0) or 0),
                     source_type="document_bm25",
                 ),
             )

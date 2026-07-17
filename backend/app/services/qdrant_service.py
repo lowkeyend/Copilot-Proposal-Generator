@@ -210,6 +210,7 @@ class QdrantService:
                     source_document=_first(payload, ("document_name", "file", "filename", "document")),
                     proposal_family=_first(payload, _FAMILY_KEYS),
                     chunk_id=str(getattr(h, "id", "")),
+                    chunk_index=int(payload.get("chunk_index", 0) or 0),
                 )
             )
         return results
@@ -252,6 +253,7 @@ class QdrantService:
                     source_document=_first(payload, ("document_name", "file", "filename", "document")),
                     proposal_family=_first(payload, _FAMILY_KEYS),
                     chunk_id=str(getattr(h, "id", "")),
+                    chunk_index=int(payload.get("chunk_index", 0) or 0),
                 )
             )
         return results
