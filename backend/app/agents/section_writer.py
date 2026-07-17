@@ -443,9 +443,14 @@ def _reference_lock_allowed(req: GenerateSectionRequest) -> bool:
     if req.instruction or _is_module_scope_request(req):
         return False
     prompt = (req.prompt or "").lower()
-    # A structural rewrite is safe only when the request is a client/version
-    # remap. Substantive additions must continue through the LLM path.
-    return not any(token in prompt for token in (" add ", " include ", " rename ", " remove ", " introduce "))
+    # Do not confuse a prohibition such as "do not add unsupported claims"
+    # with an affirmative request to add content.
+    change_terms = re.compile(r"\b(?:add|include|rename|remove|introduce)\b")
+    for match in change_terms.finditer(prompt):
+        prefix = prompt[max(0, match.start() - 14) : match.start()]
+        if not re.search(r"(?:not|no|without)\s*$", prefix):
+            return False
+    return True
 
 
 def _reference_locked_content(req: GenerateSectionRequest, evidence: list[EvidenceChunk]) -> str:
