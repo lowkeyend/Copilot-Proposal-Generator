@@ -440,9 +440,12 @@ def _reference_section_schema(req: GenerateSectionRequest) -> str:
 def _reference_lock_allowed(req: GenerateSectionRequest) -> bool:
     if not req.require_evidence or not req.context.selected_documents:
         return False
-    if req.instruction or _is_module_scope_request(req):
+    if req.instruction:
         return False
     prompt = (req.prompt or "").lower()
+    source_only = any(term in prompt for term in ("sole factual source", "only explicit", "do not invent", "only factual source"))
+    if source_only:
+        return True
     # Do not confuse a prohibition such as "do not add unsupported claims"
     # with an affirmative request to add content.
     change_terms = re.compile(r"\b(?:add|include|rename|remove|introduce)\b")
@@ -507,7 +510,16 @@ def _reference_locked_content(req: GenerateSectionRequest, evidence: list[Eviden
         if text and text not in groups.setdefault(key, []):
             groups[key].append(text)
     if not groups:
-        return ""
+        for _, chunk in ordered_evidence:
+            text = (chunk.text or "").strip()
+            if text:
+                key = (chunk.source_section or "Reference Evidence").strip() or "Reference Evidence"
+                groups.setdefault(key, [])
+                if text not in groups[key]:
+                    groups[key].append(text)
+        if not groups:
+            return ""
+        return "\n\n".join(f"**{key}**\n" + "\n\n".join(values) for key, values in groups.items()).strip()
     order = ["Executive Summary"] if title == "executive summary" else (scope_order if title == "scope of work" else solution_order)
     ordered: list[str] = []
     display = {

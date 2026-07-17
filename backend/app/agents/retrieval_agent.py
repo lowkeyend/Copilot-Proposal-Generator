@@ -525,7 +525,12 @@ def retrieve_for_section(
 
     chunks = _filter_by_documents(chunks, selected_documents)
     chunks = _filter_context_mismatch(chunks, context, query)
-    chunks = _strict_section_filter(section_title, chunks, prompt=prompt, instruction=instruction)
+    source_only_prompt = any(
+        term in (prompt or "").lower()
+        for term in ("sole factual source", "only explicit", "do not invent", "only factual source")
+    )
+    if not (selected_documents and source_only_prompt):
+        chunks = _strict_section_filter(section_title, chunks, prompt=prompt, instruction=instruction)
 
     # Light re-rank: nudge chunks whose family matches.
     if proposal_family:
