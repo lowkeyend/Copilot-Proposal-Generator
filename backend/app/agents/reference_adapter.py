@@ -1227,6 +1227,24 @@ def _section_contract(req: AdaptSectionRequest) -> str:
 """
 
 
+def _scope_boundary_clean(text: str, section_title: str) -> str:
+    """Remove leaked major sections from adapted Scope of Work output."""
+    if _section_kind(section_title) != "scope":
+        return text.strip()
+    forbidden = {
+        "proposed solution", "executive summary", "project plan", "governance",
+        "system's lead business consultant", "systems lead business consultant",
+        "system's technical consultant", "systems technical consultant",
+        "annexure l- hardware sizing document", "company profile", "company overview",
+    }
+    lines = (text or "").splitlines()
+    for index, line in enumerate(lines):
+        normalized = _clean(re.sub(r"[*_#`]+", "", line)).lower().rstrip(":")
+        if normalized in forbidden and index > 0:
+            return "\n".join(lines[:index]).strip()
+    return text.strip()
+
+
 def _strip_redundant_section_title(text: str, section_title: str) -> str:
     lines = [line.rstrip() for line in (text or "").splitlines()]
     while lines:
@@ -1614,6 +1632,19 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
         include_temenos_official=req.include_temenos_official,
         use_hybrid_retrieval=req.use_hybrid_retrieval,
     )
+    if _section_kind(req.section_title) == "scope":
+        blocked_sections = {
+            "proposed solution", "executive summary", "project plan", "governance",
+            "system's lead business consultant", "systems lead business consultant",
+            "system's technical consultant", "systems technical consultant",
+            "annexure l- hardware sizing document", "company profile", "company overview",
+        }
+        filtered = [
+            chunk for chunk in evidence
+            if _clean(chunk.source_section).lower().rstrip(":") not in blocked_sections
+        ]
+        if filtered:
+            evidence = filtered
     if req.require_evidence and not evidence:
         raise LLMError("No evidence retrieved for the selected section and selected documents.")
 
@@ -1635,6 +1666,7 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
         if _looks_like_meta_output(content):
             content = await _retry_adaptation(effective_req, brief, evidence_lines, content)
         content = _sanitize_output(content, effective_req, brief, evidence_lines)
+        content = _scope_boundary_clean(content, req.section_title)
         notes = _validate_output(content, effective_req, brief)
         section = SectionResult(
             title=req.section_title,
@@ -1662,6 +1694,7 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
             except Exception:
                 blocks = original_blocks
         content = _content_from_blocks(blocks) if blocks else _deterministic_patch(effective_req, evidence_lines)
+        content = _scope_boundary_clean(content, req.section_title)
         notes = _validate_output(content, effective_req, brief)
         section = SectionResult(
             title=req.section_title,
@@ -1732,6 +1765,7 @@ Rules:
     if _needs_retry(content, effective_req):
         content = await _retry_adaptation(effective_req, brief, evidence_lines, content)
     content = _sanitize_output(content, effective_req, brief, evidence_lines)
+    content = _scope_boundary_clean(content, req.section_title)
     notes = _validate_output(content, effective_req, brief)
     section = SectionResult(
         title=req.section_title,
