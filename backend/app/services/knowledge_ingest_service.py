@@ -89,6 +89,23 @@ def _chunk_text(text: str, chunk_size: int = 420, overlap: int = 70) -> list[str
     return [_clean(chunk) for chunk in chunks if _clean(chunk)]
 
 
+def _chunk_docx_paragraphs(text: str, chunk_size: int = 700) -> list[str]:
+    paragraphs = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    chunks: list[str] = []
+    current: list[str] = []
+    size = 0
+    for paragraph in paragraphs:
+        if current and size + len(paragraph) + 2 > chunk_size:
+            chunks.append("\n\n".join(current).strip())
+            current = []
+            size = 0
+        current.append(paragraph)
+        size += len(paragraph) + 2
+    if current:
+        chunks.append("\n\n".join(current).strip())
+    return [chunk for chunk in chunks if chunk]
+
+
 def _batched(items: list, size: int = 16):
     for index in range(0, len(items), size):
         yield items[index : index + size]
@@ -126,7 +143,7 @@ def _extract_docx_sections(data: bytes) -> list[tuple[str, str]]:
 
     def flush() -> None:
         nonlocal current_blocks
-        body = _clean("\n".join(current_blocks))
+        body = _clean_multiline("\n".join(current_blocks))
         if body:
             sections.append((current_heading, body))
         current_blocks = []
@@ -309,7 +326,7 @@ def _chunk_generic_document(name: str, text: str) -> list[ParsedChunk]:
 def _chunk_docx_document(name: str, data: bytes) -> list[ParsedChunk]:
     parsed: list[ParsedChunk] = []
     for heading, body in _extract_docx_sections(data):
-        for chunk in _chunk_text(body):
+        for chunk in _chunk_docx_paragraphs(body):
             parsed.append(
                 ParsedChunk(
                     text=chunk,
