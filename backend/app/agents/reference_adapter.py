@@ -1191,10 +1191,16 @@ def _section_contract(req: AdaptSectionRequest) -> str:
     if kind == "scope":
         return """
 - Write a contractual scope section.
+- Return Scope of Work only. Do not output Proposed Solution, Executive Summary,
+  Project Plan, Governance, Consultant Roles, or Annexure sections even if they
+  appear in the retrieved evidence.
 - Focus on implementation activities, work packages, deliverables, controls, interfaces, testing scope, and deployment support.
 - Do not add business benefits, transformation claims, or sales language.
 - Do not add methodology, governance, phases, or timeline wording unless the prompt explicitly asks for it or the evidence directly supports it.
 - Use compact bullets where they improve clarity, but keep the language operational and submission-ready.
+- Start with a short scope objective, then organize supported activities and
+  deliverables under coherent scope headings. Do not begin with an isolated
+  testing paragraph merely because it ranked highly in retrieval.
 """
     if kind == "solution":
         return """
