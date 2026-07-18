@@ -407,39 +407,23 @@ export default function WorkspacePage() {
           ].filter(Boolean)
         )
       );
-      const res = referenceNode
-        ? (
-            await api.adaptSection({
-              section_title: title,
-              reference_content: templateBody(referenceNode),
-              reference_blocks: sectionBlocks(selectedTemplate, referenceNode),
-              reference_headings: derivedKeywords,
-              context: store.context,
-              proposal_family: store.proposalFamily,
-              prompt: store.prompt,
-              instruction,
-              model: store.model,
-              top_k: Math.max(store.quality.top_k, 10),
-              include_temenos_official: store.quality.include_temenos_official,
-              use_hybrid_retrieval: store.quality.use_hybrid_retrieval,
-              require_evidence: store.quality.require_evidence,
-            })
-          ).section
-        : await api.generateSection({
-            section_title: title,
-            keywords: derivedKeywords,
-            context: store.context,
-            proposal_family: store.proposalFamily,
-            prompt: store.prompt,
-            pattern_guidance: toc?.description || "",
-            instruction,
-            model: store.model,
-            top_k: store.quality.top_k,
-            include_temenos_official: store.quality.include_temenos_official,
-            use_hybrid_retrieval: store.quality.use_hybrid_retrieval,
-            require_evidence: store.quality.require_evidence,
-            detail_level: store.quality.detail_level,
-          });
+      const res = await api.generateSection({
+        section_title: title,
+        keywords: derivedKeywords,
+        context: store.context,
+        proposal_family: store.proposalFamily,
+        prompt: store.prompt,
+        pattern_guidance: referenceNode
+          ? `Use the selected template's section headings as guidance, but generate fresh content from the selected source documents. Preserve paragraph-based formatting.`
+          : toc?.description || "",
+        instruction,
+        model: store.model,
+        top_k: store.quality.top_k,
+        include_temenos_official: store.quality.include_temenos_official,
+        use_hybrid_retrieval: store.quality.use_hybrid_retrieval,
+        require_evidence: store.quality.require_evidence,
+        detail_level: store.quality.detail_level,
+      });
       store.upsertSection({
         ...res,
         id: sectionId,

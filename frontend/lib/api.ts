@@ -1,5 +1,4 @@
 import type {
-  AdaptSectionResponse,
   ClientContext,
   EvidenceChunk,
   IntakeProfile,
@@ -21,7 +20,6 @@ import type {
   RfpParseResponse,
   ReviewIssue,
   SectionResult,
-  TemplateBlock,
   TocSection,
   VersionMeta,
 } from "./types";
@@ -232,26 +230,6 @@ export const api = {
     require_evidence?: boolean;
   }) =>
     jsonFetch<SectionResult>("/generate-section", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-
-  adaptSection: (body: {
-    section_title: string;
-    reference_content: string;
-    reference_blocks?: TemplateBlock[];
-    context: ClientContext;
-    proposal_family: string;
-    prompt?: string;
-    instruction?: string;
-    model?: string;
-    top_k?: number;
-    include_temenos_official?: boolean;
-    use_hybrid_retrieval?: boolean;
-    require_evidence?: boolean;
-    reference_headings?: string[];
-  }) =>
-    jsonFetch<AdaptSectionResponse>("/adapt-section", {
       method: "POST",
       body: JSON.stringify(body),
     }),

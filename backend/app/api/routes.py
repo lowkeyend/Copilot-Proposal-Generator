@@ -13,8 +13,6 @@ import urllib.request
 
 from app.config import get_settings
 from app.models.schemas import (
-    AdaptSectionRequest,
-    AdaptSectionResponse,
     BuildTocRequest,
     BuildTocResponse,
     DocumentQueryRequest,
@@ -56,7 +54,6 @@ from app.agents.classifier_agent import run_classifier_agent
 from app.agents.consistency_agent import run_consistency_agent
 from app.agents.context_agent import run_context_agent
 from app.agents.pattern_discovery import discover_patterns, load_registry
-from app.agents.reference_adapter import adapt_section
 from app.agents.section_writer import run_section_writer
 from app.agents.template_agent import run_template_agent
 from app.agents.toc_agent import run_toc_agent
@@ -332,16 +329,6 @@ async def regenerate_section(req: GenerateSectionRequest) -> SectionResult:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Section regeneration failed: {exc}") from exc
-
-
-@router.post("/adapt-section", response_model=AdaptSectionResponse, tags=["agents"])
-async def adapt_reference_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
-    try:
-        return await adapt_section(req)
-    except LLMError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Section adaptation failed: {exc}") from exc
 
 
 # --------------------------------------------------------------------------

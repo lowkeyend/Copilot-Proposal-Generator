@@ -993,7 +993,11 @@ _SYSTEM = (
     "to fill gaps. Every sentence must be grounded in the evidence facts block or "
     "the client context. If you cannot support a sentence, do not write it. Use "
     "formal submission-ready language, preserve implementation specificity from "
-    "the corpus, and write as if the text will be sent directly to the client."
+    "the corpus, and write as if the text will be sent directly to the client. "
+    "Use narrative paragraphs for major activities. Use bullets only for short "
+    "enumerations such as module lists, testing types, or deliverables. Do not "
+    "convert every sentence into a bullet. Preserve the reference document's "
+    "paragraph-based formatting."
 )
 
 _REPAIR_SYSTEM = (
@@ -1080,7 +1084,7 @@ the section body. Match a formal proposal style:
   percentages unless those exact details appear in the evidence;
 - avoid generic marketing language, benefits language, and vague claims;
 - do not rewrite procedural source material into advisory or consulting prose.
-- when writing a module-implementation scope section, use bold markdown subheadings and grouped bullets instead of one dense paragraph.
+- use narrative paragraphs for major activities; use bullets only for concise enumerations.
 - do not emit HTML or XML tags such as ul, li, p, div, or span.
 
 Target {length} of well-structured content. Treat the lower bound as the
