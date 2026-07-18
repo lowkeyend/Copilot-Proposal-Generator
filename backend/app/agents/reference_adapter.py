@@ -1665,7 +1665,10 @@ async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
     plan = [AdaptationChange(kind="preserve", detail=item) for item in brief.must_preserve[:6]]
     plan.extend(AdaptationChange(kind="replace", detail=item) for item in brief.must_change[:8])
 
-    if _is_major_scope_shift(effective_req) or _reference_is_placeholder(effective_req):
+    # A selected source plus a master prompt always requires fresh grounded
+    # generation; never silently return the unchanged template blocks.
+    force_grounded_rewrite = bool(req.context.selected_documents and (req.prompt or req.instruction))
+    if force_grounded_rewrite or _is_major_scope_shift(effective_req) or _reference_is_placeholder(effective_req):
         content = await _grounded_scope_rewrite(effective_req, brief, evidence_lines)
         if _looks_like_meta_output(content):
             content = await _retry_adaptation(effective_req, brief, evidence_lines, content)
