@@ -1907,6 +1907,17 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
             model=get_llm().resolve_model(req.model),
         )
 
+    if req.require_evidence and not req.context.selected_documents:
+        return SectionResult(
+            title=req.section_title,
+            content=(
+                "No source document is selected. Select the reference documents for this proposal "
+                "before generating the section; searching the full knowledge base is disabled to prevent document leakage."
+            ),
+            evidence=[],
+            model=get_llm().resolve_model(req.model),
+        )
+
     # 1) Retrieve evidence (Agent 6).
     evidence = retrieve_for_section(
         section_title=req.section_title,

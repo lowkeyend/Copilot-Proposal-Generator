@@ -1615,6 +1615,10 @@ Return final proposal content only.
 
 
 async def adapt_section(req: AdaptSectionRequest) -> AdaptSectionResponse:
+    if req.require_evidence and not req.context.selected_documents:
+        raise LLMError(
+            "No source document is selected. Select the factual reference documents before adapting the template."
+        )
     llm = get_llm()
     if not llm.available:
         raise LLMError("LLM generation is unavailable. Configure a valid API key in Settings.")
