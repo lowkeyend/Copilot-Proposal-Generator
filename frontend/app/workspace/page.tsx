@@ -341,7 +341,7 @@ export default function WorkspacePage() {
         evidence: [],
         images: collectSectionImages(section),
         locked: isStaticSection(section.title),
-        model: "reference-template",
+        model: "template-preview",
         generated_at: "",
       }))
     );
@@ -352,7 +352,7 @@ export default function WorkspacePage() {
     if (!selectedTemplate) return;
     store.setSections(
       store.sections.map((section) => {
-        if (section.model !== "reference-template") return section;
+        if (section.model !== "template-preview") return section;
         const referenceNode = referenceSections.get(section.id);
         if (!referenceNode) return section;
         return {

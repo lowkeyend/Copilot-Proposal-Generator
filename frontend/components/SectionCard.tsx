@@ -218,8 +218,11 @@ export function SectionCard({
                 {section.evidence.length > 0 && (
                   <Badge tone="muted">{section.evidence.length} sources</Badge>
                 )}
-                {section.model && (
+                {section.model && section.model !== "template-preview" && (
                   <Badge tone="muted">{section.model}</Badge>
+                )}
+                {section.model === "template-preview" && (
+                  <Badge tone="muted">Template preview - not generated</Badge>
                 )}
               </div>
             </div>
