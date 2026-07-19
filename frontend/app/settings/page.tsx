@@ -45,11 +45,10 @@ export default function SettingsPage() {
     if (typeof window !== "undefined") {
       setOpenrouterKey(window.localStorage.getItem("proposal-copilot-openrouter-key") || "");
       setGeminiKey(window.localStorage.getItem("proposal-copilot-gemini-key") || "");
-      // Groq credentials were intentionally revoked. Remove both the current
-      // and legacy browser storage names so an old key cannot be reused.
-      window.localStorage.removeItem("proposal-copilot-groq-key");
+      // Keep the canonical key persistent; remove only the obsolete legacy
+      // alias so a saved credential can be reused across sessions.
       window.localStorage.removeItem("proposal-copilot-grok-key");
-      setGroqKey("");
+      setGroqKey(window.localStorage.getItem("proposal-copilot-groq-key") || "");
     }
     api.models().then((m) => {
       setModels(m.models);
@@ -82,10 +81,8 @@ export default function SettingsPage() {
       else window.localStorage.removeItem("proposal-copilot-gemini-key");
       if (payload.grok_api_key) {
         window.localStorage.setItem("proposal-copilot-groq-key", payload.grok_api_key);
-        window.localStorage.setItem("proposal-copilot-grok-key", payload.grok_api_key);
       } else {
         window.localStorage.removeItem("proposal-copilot-groq-key");
-        window.localStorage.removeItem("proposal-copilot-grok-key");
       }
     }
     return api.saveOpenRouterSettings(payload);
