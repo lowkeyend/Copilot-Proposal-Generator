@@ -403,6 +403,7 @@ export default function WorkspacePage() {
         evidence: [],
         model: "",
         generated_at: "",
+        generation_error: "",
       });
       const referenceNode = referenceSections.get(sectionId);
       const toc = store.toc.find((item) => item.id === sectionId);
@@ -436,6 +437,7 @@ export default function WorkspacePage() {
       store.upsertSection({
         ...res,
         id: sectionId,
+        generation_error: "",
         images:
           (res.blocks || [])
             .filter((block) => block.kind === "image" && block.image)
@@ -444,7 +446,9 @@ export default function WorkspacePage() {
         locked: existing?.locked || false,
       });
     } catch (e: any) {
-      setError(e.message || "Section generation failed.");
+      const message = e.message || "Section generation failed.";
+      store.updateSection(sectionId, { generation_error: message });
+      setError(message);
     } finally {
       setBusySection(null);
     }

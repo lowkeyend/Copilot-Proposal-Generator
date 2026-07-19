@@ -167,6 +167,7 @@ export interface SectionResult {
   locked: boolean;
   model: string;
   generated_at: string;
+  generation_error?: string;
 }
 
 export interface ProposalBrief {

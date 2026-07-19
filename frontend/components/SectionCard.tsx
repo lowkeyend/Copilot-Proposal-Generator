@@ -302,6 +302,10 @@ export function SectionCard({
             </div>
           ) : section.content ? (
             renderBlocks()
+          ) : section.generation_error ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3 text-sm text-destructive">
+              Generation failed: {section.generation_error}
+            </div>
           ) : (
             <p className="py-6 text-sm text-muted-foreground">
               Not generated yet.
