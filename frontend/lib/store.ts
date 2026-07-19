@@ -200,7 +200,7 @@ export const useProposalStore = create<ProposalState>()(
     }),
     {
       name: "proposal-copilot",
-      version: 4,
+      version: 5,
       migrate: (persisted: any) => {
         const context = persisted?.context ?? {};
         const intake = context?.intake ?? {};
