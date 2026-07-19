@@ -222,6 +222,26 @@ def _strict_section_filter(section_title: str, chunks: list[EvidenceChunk], prom
     return matched
 
 
+def _document_scoped_section_route(section_title: str, chunks: list[EvidenceChunk], keywords: list[str], prompt: str) -> list[EvidenceChunk]:
+    """Route non-standard headings within the already selected documents."""
+    aliases = [_normalize_heading(term) for term in _section_alias_terms(section_title)]
+    wanted = [_normalize_heading(section_title), *aliases, *(_normalize_heading(term) for term in _prompt_heading_terms(prompt, ""))]
+    excluded = [_normalize_heading(term) for term in _section_exclusion_terms(section_title)]
+    scored: list[tuple[float, EvidenceChunk]] = []
+    for chunk in chunks:
+        heading = _normalize_heading(chunk.source_section or "")
+        if any(term and term in heading for term in excluded):
+            continue
+        haystack = _normalize_heading(" ".join([chunk.source_section or "", chunk.summary or "", chunk.text or ""]))
+        score = sum(4.0 for term in wanted if term and term in heading)
+        score += sum(1.0 for term in wanted if term and term in haystack)
+        score += min(len(_tokens(" ".join(keywords or [])) & _tokens(haystack)), 5) * 0.35
+        if score > 0:
+            scored.append((score + float(chunk.score or 0) * 0.05, chunk))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [chunk for _score, chunk in scored]
+
+
 def _lexical_fallback(
     qdrant,
     query: str,
@@ -595,7 +615,10 @@ def retrieve_for_section(
     # Source-only mode must tighten section boundaries, never disable them.
     # A selected document can contain Scope, Solution, Methodology, and
     # Governance material that must not leak into one another.
-    chunks = _strict_section_filter(section_title, chunks, prompt=prompt, instruction=instruction)
+    section_scoped = _strict_section_filter(section_title, chunks, prompt=prompt, instruction=instruction)
+    if selected_documents and not section_scoped:
+        section_scoped = _document_scoped_section_route(section_title, chunks, keywords, prompt)
+    chunks = section_scoped
 
     # Light re-rank: nudge chunks whose family matches.
     if proposal_family:
