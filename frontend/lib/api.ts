@@ -57,6 +57,22 @@ async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function jsonFetchWithTransientRetry<T>(path: string, init?: RequestInit): Promise<T> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await jsonFetch<T>(path, init);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      // Retry only platform availability failures. Do not retry 502 content
+      // validation failures because that would spend another LLM request.
+      if (!/^50[03]:/.test(lastError.message) || attempt === 2) throw lastError;
+      await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+    }
+  }
+  throw lastError || new Error("Backend request failed.");
+}
+
 async function uploadFetch<T>(path: string, form: FormData): Promise<T> {
   const openrouterKey = getOpenRouterKey();
   const res = await fetch(`${BASE}${path}`, {
@@ -229,7 +245,7 @@ export const api = {
     detail_level?: "balanced" | "corpus" | "exhaustive";
     require_evidence?: boolean;
   }) =>
-    jsonFetch<SectionResult>("/generate-section", {
+    jsonFetchWithTransientRetry<SectionResult>("/generate-section", {
       method: "POST",
       body: JSON.stringify(body),
     }),
