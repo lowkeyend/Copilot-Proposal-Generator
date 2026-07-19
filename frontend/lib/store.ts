@@ -218,6 +218,13 @@ export const useProposalStore = create<ProposalState>()(
         return {
           ...persisted,
           model: normalizedModel,
+          sections: Array.isArray(persisted?.sections)
+            ? persisted.sections.map((section: any) =>
+                section?.model === "reference-template"
+                  ? { ...section, model: "template-preview" }
+                  : section
+              )
+            : [],
           context: {
             ...emptyContext,
             ...context,

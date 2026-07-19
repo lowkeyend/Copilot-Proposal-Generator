@@ -395,6 +395,15 @@ export default function WorkspacePage() {
     setBusySection(sectionId);
     try {
       const existing = store.sections.find((item) => item.id === sectionId);
+      // Remove template preview content before generation so a failed request
+      // cannot be mistaken for an LLM-generated section.
+      store.updateSection(sectionId, {
+        content: "",
+        blocks: [],
+        evidence: [],
+        model: "",
+        generated_at: "",
+      });
       const referenceNode = referenceSections.get(sectionId);
       const toc = store.toc.find((item) => item.id === sectionId);
       const title = existing?.title || referenceNode?.title || toc?.title || "Section";
