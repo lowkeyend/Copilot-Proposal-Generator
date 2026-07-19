@@ -44,6 +44,16 @@ _TIM_TERMS = (
 
 _SECTION_ALIASES: dict[str, list[str]] = {
     "scope of work": [
+        "account management",
+        "customer information file",
+        "account creation mapping",
+        "transaction recording",
+        "transaction lifecycle management",
+        "balance management",
+        "security compliance",
+        "integration requirements",
+        "api capabilities",
+        "data exchange",
         "core upgrade",
         "environment readiness assessment",
         "upgrade analysis",
@@ -571,4 +581,5 @@ def retrieve_for_section(
         previous = unique.get(fingerprint)
         if previous is None or chunk.score > previous.score:
             unique[fingerprint] = chunk
-    return list(unique.values())[: max(top_k, 8)]
+    limit = max(top_k, 16) if selected_documents else max(top_k, 8)
+    return list(unique.values())[:limit]

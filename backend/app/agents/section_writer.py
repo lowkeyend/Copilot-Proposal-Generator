@@ -618,7 +618,7 @@ def _evidence_facts(chunks: list[EvidenceChunk], section_keywords: list[str]) ->
                 continue
             seen.add(key)
             facts.append(point)
-            if len(facts) >= 18:
+            if len(facts) >= 36:
                 return facts
     return facts
 
@@ -1118,7 +1118,7 @@ def _format_evidence_facts(chunks: list[EvidenceChunk], req: GenerateSectionRequ
                 continue
             seen.add(key)
             lines.append(f"- [{header}] {fact}")
-            if len(lines) >= 24:
+            if len(lines) >= 48:
                 return "\n".join(lines)
     return "\n".join(lines or [f"- {fact}" for fact in facts])
 
