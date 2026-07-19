@@ -322,10 +322,19 @@ export function SectionCard({
                 variant="outline"
                 size="sm"
                 disabled={section.locked || busy}
-                onClick={() => setShowInstruction((v) => !v)}
+                onClick={() => onRegenerate("")}
                 title={section.locked ? "Unlock to generate" : "Generate"}
               >
                 <RefreshCw className="h-4 w-4" /> Generate
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={section.locked || busy}
+                onClick={() => setShowInstruction((v) => !v)}
+                title="Add an optional instruction before generating"
+              >
+                <Pencil className="h-4 w-4" /> Prompt
               </Button>
             </div>
           )}
