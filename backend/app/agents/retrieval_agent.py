@@ -166,6 +166,18 @@ def _section_alias_terms(section_title: str) -> list[str]:
     return aliases
 
 
+def _section_exclusion_terms(section_title: str) -> list[str]:
+    key = (section_title or "").strip().lower()
+    exclusions = {
+        "proposed solution": ["scope of work", "upgrade methodology", "project governance", "company profile"],
+        "solution": ["scope of work", "upgrade methodology", "project governance", "company profile"],
+        "scope of work": ["proposed solution", "upgrade methodology", "project governance", "company profile"],
+        "upgrade methodology": ["proposed solution", "scope of work", "project governance", "company profile"],
+        "methodology": ["proposed solution", "scope of work", "upgrade methodology", "project governance", "company profile"],
+    }
+    return exclusions.get(key, [])
+
+
 def _strict_section_filter(section_title: str, chunks: list[EvidenceChunk], prompt: str = "", instruction: str = "") -> list[EvidenceChunk]:
     aliases = _section_alias_terms(section_title)
     prompt_terms = _prompt_heading_terms(prompt, instruction)
@@ -183,6 +195,8 @@ def _strict_section_filter(section_title: str, chunks: list[EvidenceChunk], prom
     generic_heading = re.compile(r"^(upload|document|chunk|page|paragraph|section)\b", re.IGNORECASE)
     for chunk in chunks:
         heading = _normalize_heading(chunk.source_section or "")
+        if any(_normalize_heading(term) in heading for term in _section_exclusion_terms(section_title)):
+            continue
         haystack = _normalize_heading(
             " ".join(
                 [
@@ -578,12 +592,10 @@ def retrieve_for_section(
     chunks = _filter_by_documents(chunks, selected_documents)
     chunks = [chunk for chunk in chunks if not _is_document_noise(chunk)]
     chunks = _filter_context_mismatch(chunks, context, query)
-    source_only_prompt = any(
-        term in (prompt or "").lower()
-        for term in ("sole factual source", "only explicit", "do not invent", "only factual source")
-    )
-    if not (selected_documents and source_only_prompt):
-        chunks = _strict_section_filter(section_title, chunks, prompt=prompt, instruction=instruction)
+    # Source-only mode must tighten section boundaries, never disable them.
+    # A selected document can contain Scope, Solution, Methodology, and
+    # Governance material that must not leak into one another.
+    chunks = _strict_section_filter(section_title, chunks, prompt=prompt, instruction=instruction)
 
     # Light re-rank: nudge chunks whose family matches.
     if proposal_family:

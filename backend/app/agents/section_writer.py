@@ -437,8 +437,9 @@ def _reference_section_schema(req: GenerateSectionRequest) -> str:
     if not subheadings:
         return "No fixed reference subheading schema is enforced for this section."
     return (
-        "Mirror the reference proposal section structure where the evidence supports it. "
-        "Use these subheadings in the same spirit and sequence, omitting only those with no support:\n- "
+        "Use these headings only as optional structural guidance. Never copy their "
+        "text, facts, client names, products, activities, or section content. Omit "
+        "any heading not supported by the selected evidence:\n- "
         + "\n- ".join(str(item) for item in subheadings)
     )
 
