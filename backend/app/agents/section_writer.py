@@ -1888,6 +1888,25 @@ async def _claim_grounding_issues(llm, req: GenerateSectionRequest, evidence: li
         return [f"claim verification unavailable: {type(exc).__name__}"]
 
 
+def _category_grounding_issues(evidence: list[EvidenceChunk], content: str) -> list[str]:
+    """Reject whole delivery categories that are absent from the selected source."""
+    evidence_text = " ".join([chunk.text or "" for chunk in evidence] + [chunk.source_section or "" for chunk in evidence]).lower()
+    checks = {
+        "testing": ("test", "sit", "uat", "quality assurance"),
+        "deployment": ("deploy", "cutover", "go-live", "production"),
+        "training": ("train", "knowledge transfer", "knowledge handover"),
+        "migration": ("migration", "migrate", "data conversion"),
+        "support": ("support", "hypercare", "stabilization", "stabilisation"),
+        "handover": ("handover", "hand-over", "knowledge transfer"),
+    }
+    issues: list[str] = []
+    lowered = content.lower()
+    for category, terms in checks.items():
+        if any(term in lowered for term in terms) and not any(term in evidence_text for term in terms):
+            issues.append(f"unsupported category: {category}")
+    return issues
+
+
 async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     title = req.section_title.lower()
     if any(term in title for term in ("company profile", "client profile", "about systems limited")):
@@ -1966,6 +1985,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     content = _replace_evidence_client_aliases(content, req, evidence)
     content = _prune_unsupported_sentences(content, req, evidence)
     issues = _validation_issues(content, req, evidence)
+    issues.extend(_category_grounding_issues(evidence, content))
     issues.extend(await _claim_grounding_issues(llm, req, evidence, content))
 
     if not issues and _should_expand(content, req):
@@ -1980,6 +2000,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         content = _replace_evidence_client_aliases(content, req, evidence)
         content = _prune_unsupported_sentences(content, req, evidence)
         issues = _validation_issues(content, req, evidence)
+        issues.extend(_category_grounding_issues(evidence, content))
         issues.extend(await _claim_grounding_issues(llm, req, evidence, content))
 
     attempts = 0
@@ -1996,6 +2017,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         content = _replace_evidence_client_aliases(content, req, evidence)
         content = _prune_unsupported_sentences(content, req, evidence)
         issues = _validation_issues(content, req, evidence)
+        issues.extend(_category_grounding_issues(evidence, content))
         issues.extend(await _claim_grounding_issues(llm, req, evidence, content))
         attempts += 1
 

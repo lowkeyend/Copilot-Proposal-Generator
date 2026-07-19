@@ -359,6 +359,18 @@ def _filter_by_documents(chunks: list[EvidenceChunk], document_names: list[str])
     return filtered
 
 
+def _is_document_noise(chunk: EvidenceChunk) -> bool:
+    """Exclude PDF footer/disclaimer chunks from proposal evidence."""
+    text = " ".join([chunk.text or "", chunk.source_section or "", chunk.summary or ""]).lower()
+    if "this material is prepared by" in text:
+        return True
+    if "not intended to be a comprehensive treatment" in text:
+        return True
+    if re.fullmatch(r"\d+\s*\|\s*page", (chunk.source_section or "").strip(), flags=re.IGNORECASE):
+        return True
+    return False
+
+
 def _section_alignment_score(section_title: str, chunk: EvidenceChunk) -> float:
     wanted = _tokens(section_title)
     if not wanted:
@@ -524,6 +536,7 @@ def retrieve_for_section(
         chunks = temenos_chunks + chunks
 
     chunks = _filter_by_documents(chunks, selected_documents)
+    chunks = [chunk for chunk in chunks if not _is_document_noise(chunk)]
     chunks = _filter_context_mismatch(chunks, context, query)
     source_only_prompt = any(
         term in (prompt or "").lower()
