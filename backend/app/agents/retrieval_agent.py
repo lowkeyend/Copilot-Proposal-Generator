@@ -216,8 +216,9 @@ def _lexical_fallback(
     proposal_family: str,
     top_k: int,
     document_names: list[str] | None = None,
+    all_selected: bool = False,
 ) -> list[EvidenceChunk]:
-    query_terms = _token_list(" ".join([query, section_title, " ".join(keywords or [])]))
+    query_terms = [] if all_selected else _token_list(" ".join([query, section_title, " ".join(keywords or [])]))
     if not query_terms:
         query_terms = _token_list(section_title)
     query_tokens = set(query_terms)
@@ -240,7 +241,7 @@ def _lexical_fallback(
         ).lower()
         tokens = _tokens(haystack)
         overlap = len(query_tokens & tokens)
-        if overlap == 0 and not wanted:
+        if overlap == 0 and not wanted and not all_selected:
             continue
         docs.append(
             (
@@ -476,6 +477,10 @@ def retrieve_for_section(
     except Exception:
         chunks = []
 
+    by_id: dict[str, EvidenceChunk] = {
+        chunk.chunk_id or f"semantic:{chunk.source_section}:{chunk.text[:80]}": chunk
+        for chunk in chunks
+    }
     if use_hybrid_retrieval or not chunks:
         lexical = _lexical_fallback(
             qdrant=qdrant,
@@ -486,7 +491,7 @@ def retrieve_for_section(
             top_k=max(top_k, 10),
             document_names=selected_documents,
         )
-        by_id: dict[str, EvidenceChunk] = {}
+        by_id = {}
         for chunk in chunks:
             key = chunk.chunk_id or f"semantic:{chunk.source_section}:{chunk.text[:80]}"
             by_id[key] = chunk
@@ -539,6 +544,31 @@ def retrieve_for_section(
             key = chunk.chunk_id or f"selected-bm25:{chunk.source_section}:{chunk.text[:80]}"
             if key not in by_id:
                 by_id[key] = chunk
+        chunks = list(by_id.values())
+
+    if selected_documents:
+        # Build a document-scoped coverage set so low-ranked headings are not
+        # lost behind a few highly similar executive-summary chunks.
+        coverage = _lexical_fallback(
+            qdrant=qdrant,
+            query="",
+            section_title="",
+            keywords=[],
+            proposal_family="",
+            top_k=2000,
+            document_names=selected_documents,
+            all_selected=True,
+        )
+        by_heading: dict[str, list[EvidenceChunk]] = {}
+        for chunk in coverage:
+            heading = _normalize_heading(chunk.source_section or "") or "__unlabelled__"
+            by_heading.setdefault(heading, []).append(chunk)
+        for heading_chunks in by_heading.values():
+            heading_chunks.sort(key=lambda item: item.chunk_index)
+            for chunk in heading_chunks[:3]:
+                key = chunk.chunk_id or f"coverage:{chunk.source_section}:{chunk.text[:120]}"
+                if key not in by_id:
+                    by_id[key] = chunk
         chunks = list(by_id.values())
 
     if include_temenos_official and not selected_documents:

@@ -571,10 +571,15 @@ def _extract_fact_sentence(sentence: str, section_keywords: list[str]) -> str | 
 def _extract_support_points(
     chunk: EvidenceChunk, section_keywords: list[str], limit: int = 2
 ) -> list[str]:
-    text = _clean_phrase(chunk.text or "")
-    if not text:
+    raw_text = (chunk.text or "").replace("\r", "\n")
+    if not raw_text.strip():
         return []
-    sentences = _split_sentences(text)
+    # Preserve source list boundaries before normalising whitespace. This
+    # prevents several requirements from becoming one truncated sentence.
+    fragments = [part.strip() for part in re.split(r"(?:\n|•|▪|\u2022)", raw_text) if part.strip()]
+    sentences: list[str] = []
+    for fragment in fragments:
+        sentences.extend(_split_sentences(_clean_phrase(fragment)))
     points: list[str] = []
     for sentence in sentences:
         fact = _extract_fact_sentence(sentence, section_keywords)
@@ -582,8 +587,8 @@ def _extract_support_points(
             points.append(fact.rstrip(".") + ".")
         if len(points) >= limit:
             break
-    if not points and text:
-        fact = _extract_fact_sentence(text[:260], section_keywords)
+    if not points and raw_text.strip():
+        fact = _extract_fact_sentence(_clean_phrase(raw_text)[:420], section_keywords)
         if fact:
             points.append(fact.rstrip(".") + ".")
     return _dedupe_preserve_order(points)
@@ -611,7 +616,7 @@ def _evidence_facts(chunks: list[EvidenceChunk], section_keywords: list[str]) ->
     facts: list[str] = []
     seen: set[str] = set()
     for chunk in chunks:
-        points = _extract_support_points(chunk, section_keywords, limit=3)
+        points = _extract_support_points(chunk, section_keywords, limit=8)
         for point in points:
             key = re.sub(r"[^a-z0-9]+", " ", point.lower()).strip()
             if not key or key in seen:
@@ -1112,7 +1117,7 @@ def _format_evidence_facts(chunks: list[EvidenceChunk], req: GenerateSectionRequ
     seen: set[str] = set()
     for chunk in chunks:
         header = _clean_phrase(chunk.source_section or chunk.summary or "Evidence")
-        for fact in _extract_support_points(chunk, _section_keywords(req), limit=4):
+        for fact in _extract_support_points(chunk, _section_keywords(req), limit=8):
             key = re.sub(r"[^a-z0-9]+", " ", f"{header} {fact}".lower()).strip()
             if not key or key in seen:
                 continue
