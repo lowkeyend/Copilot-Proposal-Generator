@@ -1816,6 +1816,7 @@ async def _repair_via_llm(
                     f"{_format_evidence_facts(evidence, req)}\n\n"
                     "SECTION STYLE REQUIREMENTS\n"
                     f"{_section_style_guide(req)}\n\n"
+                    f"{_source_category_instruction(evidence)}\n\n"
                     "SECTION BOUNDARY RULES\n"
                     f"{_section_boundary_rules(req)}\n\n"
                     "REFERENCE SECTION SCHEMA\n"
@@ -1857,6 +1858,7 @@ async def _expand_via_llm(
                     "section body inside <section> tags.\n\n"
                     "SECTION STYLE REQUIREMENTS\n"
                     f"{_section_style_guide(req)}\n\n"
+                    f"{_source_category_instruction(evidence)}\n\n"
                     "REFERENCE SECTION SCHEMA\n"
                     f"{_reference_section_schema(req)}\n\n"
                     "EVIDENCE FACTS (the only facts you may use)\n"
@@ -1893,25 +1895,40 @@ async def _claim_grounding_issues(llm, req: GenerateSectionRequest, evidence: li
         return [f"claim verification unavailable: {type(exc).__name__}"]
 
 
-def _category_grounding_issues(evidence: list[EvidenceChunk], content: str) -> list[str]:
-    """Reject whole delivery categories that are absent from the selected source."""
-    evidence_text = " ".join([chunk.text or "" for chunk in evidence] + [chunk.source_section or "" for chunk in evidence]).lower()
-    checks = {
+_DELIVERY_CATEGORY_TERMS = {
         "testing": ("test", "sit", "uat", "quality assurance"),
         "deployment": ("deploy", "cutover", "go-live", "production"),
         "training": ("train", "knowledge transfer", "knowledge handover"),
         "migration": ("migration", "migrate", "data conversion"),
         "support": ("ongoing support", "post-go-live", "hypercare", "stabilization", "stabilisation", "support activities"),
         "handover": ("handover", "hand-over", "knowledge transfer"),
-    }
+}
+
+
+def _absent_evidence_categories(evidence: list[EvidenceChunk]) -> list[str]:
+    evidence_text = " ".join([chunk.text or "" for chunk in evidence] + [chunk.source_section or "" for chunk in evidence]).lower()
+    return [category for category, terms in _DELIVERY_CATEGORY_TERMS.items() if not any(term in evidence_text for term in terms)]
+
+
+def _category_grounding_issues(evidence: list[EvidenceChunk], content: str) -> list[str]:
+    """Reject whole delivery categories that are absent from the selected source."""
+    evidence_text = " ".join([chunk.text or "" for chunk in evidence] + [chunk.source_section or "" for chunk in evidence]).lower()
+    absent = set(_absent_evidence_categories(evidence))
     issues: list[str] = []
     lowered = content.lower()
-    for category, terms in checks.items():
-        if any(term in lowered for term in terms) and not any(term in evidence_text for term in terms):
+    for category, terms in _DELIVERY_CATEGORY_TERMS.items():
+        if category in absent and any(term in lowered for term in terms):
             issues.append(f"unsupported category: {category}")
     if "secure api" in lowered and "secure api" not in evidence_text and "api security" not in evidence_text:
         issues.append("unsupported claim: secure APIs")
     return issues
+
+
+def _source_category_instruction(evidence: list[EvidenceChunk]) -> str:
+    absent = _absent_evidence_categories(evidence)
+    if not absent:
+        return ""
+    return "SOURCE-ABSENT CATEGORIES (do not mention or create these categories): " + ", ".join(absent) + "."
 
 
 async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
@@ -1948,10 +1965,10 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         use_hybrid_retrieval=req.use_hybrid_retrieval,
     )
 
-    instruction_block = ""
+    instruction_block = _source_category_instruction(evidence)
     length = _length_for(req)
     if req.instruction:
-        instruction_block = f"REVISION INSTRUCTION (follow precisely):\n{req.instruction}"
+        instruction_block += ("\n" if instruction_block else "") + f"REVISION INSTRUCTION (follow precisely):\n{req.instruction}"
 
     if req.require_evidence and not evidence:
         return SectionResult(
