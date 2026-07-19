@@ -1896,7 +1896,7 @@ def _category_grounding_issues(evidence: list[EvidenceChunk], content: str) -> l
         "deployment": ("deploy", "cutover", "go-live", "production"),
         "training": ("train", "knowledge transfer", "knowledge handover"),
         "migration": ("migration", "migrate", "data conversion"),
-        "support": ("support", "hypercare", "stabilization", "stabilisation"),
+        "support": ("ongoing support", "post-go-live", "hypercare", "stabilization", "stabilisation", "support activities"),
         "handover": ("handover", "hand-over", "knowledge transfer"),
     }
     issues: list[str] = []
@@ -1904,6 +1904,8 @@ def _category_grounding_issues(evidence: list[EvidenceChunk], content: str) -> l
     for category, terms in checks.items():
         if any(term in lowered for term in terms) and not any(term in evidence_text for term in terms):
             issues.append(f"unsupported category: {category}")
+    if "secure api" in lowered and "secure api" not in evidence_text and "api security" not in evidence_text:
+        issues.append("unsupported claim: secure APIs")
     return issues
 
 
