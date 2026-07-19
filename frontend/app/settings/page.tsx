@@ -116,7 +116,11 @@ export default function SettingsPage() {
     setDetail("");
     try {
       const trimmed = apiKey.trim();
-      const result = await api.checkOpenRouterSettings({ api_key: trimmed, model: store.model });
+      const result = await api.checkOpenRouterSettings({
+        api_key: store.model.startsWith("groq/") ? "" : trimmed,
+        grok_api_key: store.model.startsWith("groq/") ? trimmed : "",
+        model: store.model,
+      });
       setMessage(result.ok ? result.message : result.message || `${selectedProviderLabel()} check failed.`);
       setDetail(result.detail || `Model checked: ${result.model}.`);
       setStatus({
@@ -141,7 +145,12 @@ export default function SettingsPage() {
     try {
       const updated = await persistKeys(openrouterKey, geminiKey, groqKey);
       setStatus(updated);
-      const result = await api.checkOpenRouterSettings({ api_key: selectedProviderKey(), model: store.model });
+      const selectedKey = selectedProviderKey();
+      const result = await api.checkOpenRouterSettings({
+        api_key: store.model.startsWith("groq/") ? "" : selectedKey,
+        grok_api_key: store.model.startsWith("groq/") ? selectedKey : "",
+        model: store.model,
+      });
       setMessage(result.ok ? result.message : result.message || `${selectedProviderLabel()} check failed.`);
       setDetail(result.detail || `Source: ${updated.source}.`);
       setStatus({
