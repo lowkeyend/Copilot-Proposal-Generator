@@ -12,14 +12,30 @@ export function KbStatus() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    api
-      .status()
-      .then(setStatus)
-      .catch(() => setError(true));
+    let cancelled = false;
+    async function loadStatus() {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const value = await api.status();
+          if (!cancelled) {
+            setStatus(value);
+            setError(false);
+          }
+          return;
+        } catch {
+          if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1200));
+        }
+      }
+      if (!cancelled) setError(true);
+    }
+    void loadStatus();
     api
       .models()
       .then((m) => setLlmReady(m.llm_ready))
       .catch(() => setLlmReady(false));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (error) {
