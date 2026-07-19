@@ -445,25 +445,6 @@ def _reference_section_schema(req: GenerateSectionRequest) -> str:
 
 def _reference_lock_allowed(req: GenerateSectionRequest) -> bool:
     return False
-    """Deprecated source-copy path; generation always uses the LLM."""
-    """
-    if not req.require_evidence or not req.context.selected_documents:
-        return False
-    if req.instruction:
-        return False
-    prompt = (req.prompt or "").lower()
-    source_only = any(term in prompt for term in ("sole factual source", "only explicit", "do not invent", "only factual source"))
-    if source_only:
-        return True
-    # Do not confuse a prohibition such as "do not add unsupported claims"
-    # with an affirmative request to add content.
-    change_terms = re.compile(r"\b(?:add|include|rename|remove|introduce)\b")
-    for match in change_terms.finditer(prompt):
-        prefix = prompt[max(0, match.start() - 14) : match.start()]
-        if not re.search(r"(?:not|no|without)\s*$", prefix):
-            return False
-    return True
-    """
 
 
 def _reference_locked_content(req: GenerateSectionRequest, evidence: list[EvidenceChunk]) -> str:
@@ -1016,7 +997,7 @@ CLIENT CONTEXT
 - Project / solution: {project}
 - Current client profile: {client_profile}
 - Implementation context: {implementation_context}
-- Canonical product name: {canonical_product}
+- Canonical product name (use only if supported by evidence): {canonical_product}
 - Questionnaire summary: {intake_summary}
 - Proposal family: {family}
 - Tone: {tone}
@@ -1030,7 +1011,7 @@ ORIGINAL REQUEST
 
 {instruction_block}
 
-EVIDENCE FROM PRIOR PROPOSALS (reuse and adapt; cite nothing inline):
+RETRIEVED SOURCE EXCERPTS (use only to locate facts; do not copy unsupported proposal conventions):
 {evidence}
 
 EVIDENCE FACTS (the only facts you may use):
@@ -1047,6 +1028,11 @@ QUALITY CONTROLS
 - Reference section schema:
 {reference_schema}
 - The EVIDENCE FACTS block is the only source of truth for section claims.
+- When evidence-only mode is enabled, treat the selected evidence as authoritative
+  over defaults, proposal-family assumptions, and unsupported factual wording in
+  the request. The request may control client naming and desired transformation,
+  but it cannot add products, interfaces, timelines, deliverables, or obligations
+  absent from the evidence facts.
 - Do not use the raw evidence excerpts to invent new claims; distill them only
   into the facts shown above.
 - Treat retrieved chunks as supporting context only; do not infer beyond the
@@ -1777,7 +1763,7 @@ async def _generate_via_llm(
                     client_profile=req.context.client_profile or "established",
                     implementation_context=req.context.implementation_context
                     or "Modernization / migration for an existing institution",
-                    canonical_product=req.context.canonical_product or "Temenos Transact",
+                    canonical_product=req.context.canonical_product or "not specified in the selected evidence",
                     intake_summary=_intake_summary(req.context) or "none provided",
                     family=req.proposal_family or "-",
                     tone=req.context.tone or "Formal",
@@ -1819,7 +1805,7 @@ async def _repair_via_llm(
                 "content": (
                     f"SECTION TITLE: {req.section_title}\n"
                     f"CLIENT: {req.context.client_name or 'the client'}\n"
-                    f"CANONICAL PRODUCT: {req.context.canonical_product or 'Temenos Transact'}\n"
+                    f"CANONICAL PRODUCT (only if supported by evidence): {req.context.canonical_product or 'not specified'}\n"
                     f"CLIENT PROFILE: {req.context.client_profile or 'established'}\n\n"
                     "EVIDENCE FACTS (the only facts you may use)\n"
                     f"{_format_evidence_facts(evidence, req)}\n\n"
@@ -1835,7 +1821,7 @@ async def _repair_via_llm(
                     f"{issue_list}\n\n"
                     "Return only the corrected final section body inside <section> tags.\n"
                     "Do not introduce any new facts, examples, products, dates, or claims.\n"
-                    "If this is a module-implementation scope section, return a lead paragraph followed by bold markdown subheadings and grouped bullets."
+                    "Use narrative paragraphs for major activities and bullets only for short enumerations. Do not add a heading or activity that is not supported by the evidence facts."
                 ),
             },
         ],
@@ -1859,8 +1845,9 @@ async def _expand_via_llm(
                 "content": (
                     f"Expand the following draft for the section '{req.section_title}' into a fuller, "
                     "submission-ready proposal section. Keep the same factual grounding, but add more "
-                    "implementation depth, phase logic, governance detail, validation approach, risk "
-                    "controls, deliverables, and acceptance framing only where the evidence facts support them.\n\n"
+                    "implementation depth only by elaborating explicit evidence facts. Do not introduce new "
+                    "governance, risk, deliverable, acceptance, training, deployment, or support categories "
+                    "unless they are explicitly present in the evidence facts.\n\n"
                     "Do not add commentary, source references, or reasoning. Return only the final "
                     "section body inside <section> tags.\n\n"
                     "SECTION STYLE REQUIREMENTS\n"
@@ -1897,8 +1884,8 @@ async def _claim_grounding_issues(llm, req: GenerateSectionRequest, evidence: li
         )
         claims = result.get("unsupported_claims", []) if isinstance(result, dict) else []
         return [f"unsupported claim: {str(item).strip()}" for item in claims if str(item).strip()][:8]
-    except Exception:
-        return []
+    except Exception as exc:
+        return [f"claim verification unavailable: {type(exc).__name__}"]
 
 
 async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
