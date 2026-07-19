@@ -976,6 +976,8 @@ _SYSTEM = (
     "retrieval, source documents, questionnaire context, or instructions. Use only "
     "the explicitly provided evidence facts and client context. If a claim is not "
     "directly supported, omit it. Do not use general banking or Temenos knowledge "
+    "to convert a source requirement into a deliverable, implementation promise, "
+    "module, documentation package, security control, or acceptance commitment. "
     "to fill gaps. Every sentence must be grounded in the evidence facts block or "
     "the client context. If you cannot support a sentence, do not write it. Use "
     "formal submission-ready language, preserve implementation specificity from "
@@ -1033,6 +1035,10 @@ QUALITY CONTROLS
 - Reference section schema:
 {reference_schema}
 - The EVIDENCE FACTS block is the only source of truth for section claims.
+- Preserve claim type exactly. A documented capability is not a deliverable; an
+  interface requirement is not an implemented interface; an API capability is not
+  API documentation; and a security/compliance statement is not a security control
+  or protocol. Only state those stronger claims when the evidence explicitly does.
 - When evidence-only mode is enabled, treat the selected evidence as authoritative
   over defaults, proposal-family assumptions, and unsupported factual wording in
   the request. The request may control client naming and desired transformation,
@@ -1878,14 +1884,13 @@ async def _claim_grounding_issues(llm, req: GenerateSectionRequest, evidence: li
     try:
         result = await llm.chat_json(
             [
-                {"role": "system", "content": "You are a strict proposal fact checker. Return JSON only."},
+                {"role": "system", "content": "You are a strict entailment checker for evidence-grounded proposals. Return JSON only. A claim is supported only when the evidence explicitly states it or it is a direct grammatical paraphrase. Do not accept plausible implications. Requirements are not deliverables; capabilities are not implementation completion; API functions are not documentation or security protocols."},
                 {"role": "user", "content": (
                     f"SECTION: {req.section_title}\nCLIENT: {req.context.client_name}\n\n"
                     "EVIDENCE FACTS (the only permitted factual source):\n"
                     f"{_format_evidence_facts(evidence, req)}\n\nDRAFT:\n{content}\n\n"
                     'Return {"unsupported_claims": ["exact short claim", ...]}. '
-                    "List only material claims not explicitly supported by the evidence or client context. "
-                    "Do not flag normal grammatical synthesis or headings. Return an empty list when fully grounded."
+                    "List every material claim not explicitly supported by the evidence. Flag changes in claim type, including requirements rewritten as deliverables, capabilities rewritten as completed modules, or security/compliance language rewritten as controls. Do not flag only client-name substitution or direct grammatical synthesis. Return an empty list only when fully entailed."
                 )},
             ], model=req.model, temperature=0.0, max_tokens=900
         )
@@ -1921,6 +1926,23 @@ def _category_grounding_issues(evidence: list[EvidenceChunk], content: str) -> l
             issues.append(f"unsupported category: {category}")
     if "secure api" in lowered and "secure api" not in evidence_text and "api security" not in evidence_text:
         issues.append("unsupported claim: secure APIs")
+    return issues
+
+
+def _claim_type_issues(evidence: list[EvidenceChunk], content: str) -> list[str]:
+    """Reject stronger contractual claim types absent from the selected source."""
+    evidence_text = " ".join(chunk.text or "" for chunk in evidence).lower()
+    lowered = content.lower()
+    claim_types = {
+        "deliverable": ("deliverable", "handover package", "at the conclusion", "will be delivered"),
+        "documentation": ("documentation", "technical specifications", "request/response schemas", "security protocols"),
+        "implementation completion": ("fully functional", "implemented module", "completed module", "end-to-end module"),
+        "security control": ("secure and compliant access", "security control", "encryption", "authentication protocol"),
+    }
+    issues: list[str] = []
+    for label, phrases in claim_types.items():
+        if any(phrase in lowered for phrase in phrases) and not any(phrase in evidence_text for phrase in phrases):
+            issues.append(f"unsupported claim type: {label}")
     return issues
 
 
@@ -2010,6 +2032,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
     content = _prune_unsupported_sentences(content, req, evidence)
     issues = _validation_issues(content, req, evidence)
     issues.extend(_category_grounding_issues(evidence, content))
+    issues.extend(_claim_type_issues(evidence, content))
     issues.extend(await _claim_grounding_issues(llm, req, evidence, content))
 
     if not issues and _should_expand(content, req):
@@ -2025,6 +2048,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         content = _prune_unsupported_sentences(content, req, evidence)
         issues = _validation_issues(content, req, evidence)
         issues.extend(_category_grounding_issues(evidence, content))
+        issues.extend(_claim_type_issues(evidence, content))
         issues.extend(await _claim_grounding_issues(llm, req, evidence, content))
 
     attempts = 0
@@ -2042,6 +2066,7 @@ async def run_section_writer(req: GenerateSectionRequest) -> SectionResult:
         content = _prune_unsupported_sentences(content, req, evidence)
         issues = _validation_issues(content, req, evidence)
         issues.extend(_category_grounding_issues(evidence, content))
+        issues.extend(_claim_type_issues(evidence, content))
         issues.extend(await _claim_grounding_issues(llm, req, evidence, content))
         attempts += 1
 
