@@ -53,13 +53,9 @@ class LLMService:
         return model_id.split("groq/", 1)[1] if model_id.startswith("groq/") else model_id
 
     def _candidate_models(self, model: Optional[str]) -> list[str]:
-        resolved = self.resolve_model(model)
-        candidates: list[str] = [resolved]
-        provider = self._provider_for_model(resolved)
-        for item in self.settings.supported_models:
-            if item not in candidates and self._provider_for_model(item) == provider:
-                candidates.append(item)
-        return candidates
+        # Never silently switch models. A proposal must be traceable to the
+        # model selected by the user; rate limits and invalid models are errors.
+        return [self.resolve_model(model)]
 
     def _extract_message_text(self, data: dict[str, Any]) -> str:
         try:
@@ -255,7 +251,7 @@ class LLMService:
         messages: list[dict[str, str]],
         model: Optional[str] = None,
         temperature: float = 0.2,
-        max_tokens: int = 1600,
+        max_tokens: int = 700,
     ) -> Any:
         """Ask the model for JSON and parse it defensively."""
         raw = await self.chat(messages, model, temperature, max_tokens)

@@ -1893,7 +1893,7 @@ async def _claim_grounding_issues(llm, req: GenerateSectionRequest, evidence: li
                     'Return {"unsupported_claims": ["exact short claim", ...]}. '
                     "List every material claim not explicitly supported by the evidence. Flag changes in claim type, including requirements rewritten as deliverables, capabilities rewritten as completed modules, or security/compliance language rewritten as controls. Do not flag only client-name substitution or direct grammatical synthesis. Return an empty list only when fully entailed."
                 )},
-            ], model=req.model, temperature=0.0, max_tokens=900
+            ], model=req.model, temperature=0.0, max_tokens=450
         )
         claims = result.get("unsupported_claims", []) if isinstance(result, dict) else []
         return [f"unsupported claim: {str(item).strip()}" for item in claims if str(item).strip()][:8]
