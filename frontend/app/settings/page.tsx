@@ -45,7 +45,11 @@ export default function SettingsPage() {
     if (typeof window !== "undefined") {
       setOpenrouterKey(window.localStorage.getItem("proposal-copilot-openrouter-key") || "");
       setGeminiKey(window.localStorage.getItem("proposal-copilot-gemini-key") || "");
-      setGroqKey(window.localStorage.getItem("proposal-copilot-groq-key") || window.localStorage.getItem("proposal-copilot-grok-key") || "");
+      // Groq credentials were intentionally revoked. Remove both the current
+      // and legacy browser storage names so an old key cannot be reused.
+      window.localStorage.removeItem("proposal-copilot-groq-key");
+      window.localStorage.removeItem("proposal-copilot-grok-key");
+      setGroqKey("");
     }
     api.models().then((m) => {
       setModels(m.models);
