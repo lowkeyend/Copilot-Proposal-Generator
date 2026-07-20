@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
+  { href: "/start", label: "Start" },
   { href: "/workspace", label: "Workspace" },
   { href: "/templates", label: "Templates" },
   { href: "/knowledge-base", label: "Knowledge Base" },
